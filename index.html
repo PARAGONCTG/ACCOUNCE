@@ -1,0 +1,1193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Paragon — Account System</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%235b5bf6'/><text y='.85em' font-size='72' x='12' fill='white'>P</text></svg>"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { min-height: 100vh; }
+    body { background: #0f0f11; color: #e8e6e1; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useMemo, useRef } = React;
+
+const TYPES = ["Bill", "Payment"];
+const DEFAULT_PEOPLE = ["LYNN", "GARRY", "HELLEN"];
+const DEFAULT_ENTRY_BY = ["AZIM", "ZIDAN", "ALA UDDIN", "EMON", "PARVEZ"];
+
+let nextId = 5;
+let nextTxnNum = 5;
+const makeTxnId = (n) => "TXN-" + String(n).padStart(4, "0");
+const fmtDate = (iso) => {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" }) + " " +
+    d.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+};
+
+const initialData = [
+  { id: 1, txnId: "TXN-0001", name: "LYNN",   type: "Bill",    amount: 1200, source: "Office",  entryBy: "AZIM",  createdAt: "2025-01-10T09:15:00", docs: [] },
+  { id: 2, txnId: "TXN-0002", name: "GARRY",  type: "Payment", amount: 3500, source: "Bank",    entryBy: "ZIDAN", createdAt: "2025-01-12T11:30:00", docs: [] },
+  { id: 3, txnId: "TXN-0003", name: "HELLEN", type: "Bill",    amount: 85,   source: "Utility", entryBy: "EMON",  createdAt: "2025-01-14T14:00:00", docs: [] },
+  { id: 4, txnId: "TXN-0004", name: "LYNN",   type: "Payment", amount: 600,  source: "Cash",    entryBy: "PARVEZ",createdAt: "2025-01-15T16:45:00", docs: [] },
+];
+
+const fmt = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
+const AVATAR_COLORS = ["#5b5bf6","#f59e0b","#10b981","#ef4444","#8b5cf6","#06b6d4","#f43f5e"];
+const EB_COLORS    = ["#a78bfa","#fb923c","#34d399","#f472b6","#60a5fa","#facc15","#e879f9"];
+
+// ── PDF GENERATOR ─────────────────────────────────────────────────────────────
+function generatePDF(person, entries, people) {
+  const pe      = entries.filter(e => e.name === person);
+  const bills   = pe.filter(e => e.type === "Bill").reduce((s, e) => s + e.amount, 0);
+  const payments= pe.filter(e => e.type === "Payment").reduce((s, e) => s + e.amount, 0);
+  const balance = payments - bills;
+  const color   = AVATAR_COLORS[people.indexOf(person) % AVATAR_COLORS.length];
+  const today   = new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" });
+
+  let running = 0;
+  const rows = pe.map((e, i) => {
+    running += e.type === "Payment" ? e.amount : -e.amount;
+    const balColor  = running >= 0 ? "#16a34a" : "#dc2626";
+    const typeColor = e.type === "Bill" ? "#dc2626" : "#16a34a";
+    const bg        = i % 2 === 0 ? "#ffffff" : "#f8f9ff";
+    const docsHtml  = e.docs && e.docs.length > 0
+      ? e.docs.map(d => `<span style="font-size:10px;background:#f1f5f9;border:1px solid #e2e8f0;padding:2px 6px;border-radius:4px;color:#64748b">📎 ${d.name}</span>`).join(" ")
+      : '<span style="color:#d1d5db;font-size:11px">—</span>';
+    return `<tr style="background:${bg}">
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:11px;font-family:monospace;color:#6366f1;background:#f5f3ff;font-weight:600">${e.txnId || "#" + (i+1)}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#6b7280">${e.createdAt ? new Date(e.createdAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "—"}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb"><span style="background:${e.type==="Bill"?"#fef2f2":"#f0fdf4"};color:${typeColor};border:1px solid ${e.type==="Bill"?"#fca5a5":"#86efac"};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">${e.type.toUpperCase()}</span></td>
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#374151">${e.source || "—"}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#6b7280">${e.entryBy || "—"}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:700;color:#111827;text-align:right">${fmt(e.amount)}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:700;color:${balColor};text-align:right">${fmt(running)}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:11px">${docsHtml}</td>
+    </tr>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Account of ${person}</title>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Inter',sans-serif;background:#fff;color:#111827;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+@page{margin:24mm 16mm;size:A4}@media print{.no-print{display:none!important}}</style></head><body>
+<div style="max-width:820px;margin:0 auto;padding:28px 0">
+  <div class="no-print" style="text-align:right;margin-bottom:20px">
+    <button onclick="window.print()" style="background:#5b5bf6;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">🖨️ Print / Save as PDF</button>
+  </div>
+  <div style="background:${color};border-radius:14px;padding:28px 32px;margin-bottom:24px;position:relative;overflow:hidden">
+    <div style="position:absolute;top:-30px;right:-30px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.08)"></div>
+    <div style="position:relative">
+      <div style="font-size:10px;font-weight:600;color:rgba(255,255,255,.65);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">Account Statement</div>
+      <h1 style="font-size:32px;font-weight:800;color:#fff;letter-spacing:-.02em;margin-bottom:3px">Account of ${person}</h1>
+      <div style="font-size:12px;color:rgba(255,255,255,.7)">Generated on ${today}</div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
+    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px"><div style="font-size:10px;color:#9ca3af;letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">Total Bills</div><div style="font-size:22px;font-weight:800;color:#dc2626">${fmt(bills)}</div></div>
+    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px"><div style="font-size:10px;color:#9ca3af;letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">Total Payments</div><div style="font-size:22px;font-weight:800;color:#16a34a">${fmt(payments)}</div></div>
+    <div style="border:2px solid ${balance>=0?"#16a34a":"#dc2626"};border-radius:10px;padding:16px 18px;background:${balance>=0?"#f0fdf4":"#fef2f2"}"><div style="font-size:10px;color:#9ca3af;letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">Balance</div><div style="font-size:22px;font-weight:800;color:${balance>=0?"#16a34a":"#dc2626"}">${fmt(balance)}</div></div>
+  </div>
+  <div style="border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:24px">
+    <div style="background:#f9fafb;padding:12px 14px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between">
+      <span style="font-size:13px;font-weight:700;color:#374151">Transaction History</span>
+      <span style="font-size:11px;color:#9ca3af">${pe.length} records</span>
+    </div>
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#f1f5f9">
+        <th style="padding:9px 12px;text-align:left;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">ID</th>
+        <th style="padding:9px 12px;text-align:left;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Date</th>
+        <th style="padding:9px 12px;text-align:left;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Type</th>
+        <th style="padding:9px 12px;text-align:left;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Details</th>
+        <th style="padding:9px 12px;text-align:left;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Prepared By</th>
+        <th style="padding:9px 12px;text-align:right;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Amount</th>
+        <th style="padding:9px 12px;text-align:right;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Balance</th>
+        <th style="padding:9px 12px;text-align:left;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Docs</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="background:#f9fafb">
+        <td colspan="4" style="padding:11px 12px;font-size:12px;font-weight:700;color:#374151;border-top:2px solid #e5e7eb">TOTAL</td>
+        <td style="padding:11px 12px;text-align:right;font-size:13px;font-weight:800;color:#111827;border-top:2px solid #e5e7eb">${fmt(bills+payments)}</td>
+        <td style="padding:11px 12px;text-align:right;font-size:13px;font-weight:800;color:${balance>=0?"#16a34a":"#dc2626"};border-top:2px solid #e5e7eb">${fmt(balance)}</td>
+        <td style="border-top:2px solid #e5e7eb"></td>
+      </tr></tfoot>
+    </table>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding-top:14px;border-top:1px solid #e5e7eb">
+    <span style="font-size:11px;color:#9ca3af">Paragon — Account System</span>
+    <span style="font-size:11px;color:#9ca3af">${today}</span>
+  </div>
+</div></body></html>`;
+  const blob = new Blob([html], { type:"text/html" });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, "_blank");
+  if (!win) {
+    // fallback: download as file
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Paragon-${person}-Statement.html`;
+    a.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// ── FILE ICON ─────────────────────────────────────────────────────────────────
+function FileIcon({ type }) {
+  const isPdf = type === "application/pdf";
+  return (
+    <div style={{ width:32,height:32,borderRadius:6,background:isPdf?"#2d1a1a":"#1a1a2d",border:`1px solid ${isPdf?"#5c2020":"#2a2a5c"}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+      {isPdf
+        ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f87171" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+        : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21,15 16,10 5,21"/></svg>
+      }
+    </div>
+  );
+}
+
+// ── DOC UPLOADER ──────────────────────────────────────────────────────────────
+function DocUploader({ docs, onChange }) {
+  const inputRef = useRef();
+  const [dragging, setDragging] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const handleFiles = (fileList) => {
+    Array.from(fileList).filter(f => f.type === "application/pdf" || f.type.startsWith("image/")).forEach(f => {
+      const reader = new FileReader();
+      reader.onload = ev => onChange(prev => [...prev, { id: Date.now()+Math.random(), name:f.name, type:f.type, size:f.size, dataUrl:ev.target.result }]);
+      reader.readAsDataURL(f);
+    });
+  };
+  const sz = b => b < 1048576 ? `${(b/1024).toFixed(0)} KB` : `${(b/1048576).toFixed(1)} MB`;
+  return (
+    <div>
+      <div onDragOver={e=>{e.preventDefault();setDragging(true)}} onDragLeave={()=>setDragging(false)}
+        onDrop={e=>{e.preventDefault();setDragging(false);handleFiles(e.dataTransfer.files)}}
+        onClick={()=>inputRef.current.click()}
+        style={{border:`2px dashed ${dragging?"#5b5bf6":"#2e2e3a"}`,borderRadius:10,padding:"18px",textAlign:"center",cursor:"pointer",background:dragging?"#16162e":"#1a1a22",transition:"all .2s"}}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={dragging?"#5b5bf6":"#444"} strokeWidth="1.5" style={{margin:"0 auto 7px",display:"block"}}>
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17,8 12,3 7,8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <p style={{fontSize:12,color:dragging?"#a5b4fc":"#666",marginBottom:2}}>{dragging?"Drop here":"Click or drag to upload"}</p>
+        <p style={{fontSize:10,color:"#444"}}>PDF, JPG, PNG, WEBP</p>
+        <input ref={inputRef} type="file" multiple accept="application/pdf,image/*" style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
+      </div>
+      {docs.length > 0 && (
+        <div style={{marginTop:9,display:"flex",flexDirection:"column",gap:6}}>
+          {docs.map(doc => (
+            <div key={doc.id} style={{display:"flex",alignItems:"center",gap:10,background:"#1e1e26",border:"1px solid #2a2a32",borderRadius:8,padding:"8px 12px"}}>
+              {doc.type.startsWith("image/")
+                ? <img src={doc.dataUrl} alt={doc.name} style={{width:32,height:32,borderRadius:5,objectFit:"cover",flexShrink:0,cursor:"pointer"}} onClick={()=>setPreviewDoc(doc)}/>
+                : <div onClick={()=>setPreviewDoc(doc)} style={{cursor:"pointer"}}><FileIcon type={doc.type}/></div>}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,color:"#e8e6e1",fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{doc.name}</div>
+                <div style={{fontSize:10,color:"#555",marginTop:1}}>{sz(doc.size)}</div>
+              </div>
+              <button onClick={()=>setPreviewDoc(doc)} style={{background:"none",border:"1px solid #2e2e3a",borderRadius:5,color:"#888",fontSize:11,padding:"3px 9px",cursor:"pointer",fontFamily:"inherit"}}>View</button>
+              <button onClick={()=>onChange(prev=>prev.filter(d=>d.id!==doc.id))} style={{background:"none",border:"1px solid #3d2020",borderRadius:5,color:"#f87171",fontSize:11,padding:"3px 7px",cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {previewDoc && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.88)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:24}} onClick={()=>setPreviewDoc(null)}>
+          <div style={{background:"#16161b",border:"1px solid #2a2a32",borderRadius:12,overflow:"hidden",maxWidth:800,width:"100%",maxHeight:"88vh",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 18px",borderBottom:"1px solid #2a2a32"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}><FileIcon type={previewDoc.type}/>
+                <div><div style={{fontSize:13,fontWeight:600,color:"#e8e6e1"}}>{previewDoc.name}</div></div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <a href={previewDoc.dataUrl} download={previewDoc.name} style={{background:"#1e1e2e",border:"1px solid #3a3a5e",color:"#a5b4fc",textDecoration:"none",padding:"6px 13px",borderRadius:6,fontSize:12}}>⬇ Download</a>
+                <button onClick={()=>setPreviewDoc(null)} style={{background:"#2d1a1a",border:"1px solid #5c2020",color:"#f87171",padding:"6px 11px",borderRadius:6,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+              </div>
+            </div>
+            <div style={{flex:1,overflow:"auto",padding:14,display:"flex",alignItems:"center",justifyContent:"center",background:"#0f0f11"}}>
+              {previewDoc.type.startsWith("image/")
+                ? <img src={previewDoc.dataUrl} alt={previewDoc.name} style={{maxWidth:"100%",maxHeight:"68vh",borderRadius:8,objectFit:"contain"}}/>
+                : <iframe src={previewDoc.dataUrl} title={previewDoc.name} style={{width:"100%",height:"68vh",border:"none",borderRadius:8}}/>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DROPDOWN SELECTOR with + Add ─────────────────────────────────────────────
+function DropdownSelect({ label, value, options, onChange, onAddNew, placeholder = "Select…", colors = EB_COLORS }) {
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [newVal, setNewVal] = useState("");
+  const [newErr, setNewErr] = useState("");
+  const ref = useRef();
+
+  // close on outside click
+  const handleOutside = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+  useState(() => { document.addEventListener("mousedown", handleOutside); return () => document.removeEventListener("mousedown", handleOutside); });
+
+  const handleAdd = () => {
+    const t = newVal.trim().toUpperCase();
+    if (!t) { setNewErr("Enter a name"); return; }
+    if (options.includes(t)) { setNewErr("Already exists"); return; }
+    onAddNew(t);
+    onChange(t);
+    setNewVal(""); setNewErr(""); setAdding(false); setOpen(false);
+  };
+
+  return (
+    <div ref={ref} style={{ position:"relative" }}>
+      <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:8, letterSpacing:".06em", textTransform:"uppercase" }}>{label}</label>
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ display:"flex", alignItems:"center", justifyContent:"space-between", background:"#1e1e26", border:`1px solid ${value?"#3e3e4e":"#2e2e3a"}`, borderRadius:8, padding:"12px 14px", cursor:"pointer", transition:"border .2s" }}
+      >
+        <div style={{ display:"flex", alignItems:"center", gap:9 }}>
+          {value && (
+            <div style={{ width:22, height:22, borderRadius:"50%", background:colors[options.indexOf(value) % colors.length], display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:800, color:"#0f0f11", flexShrink:0 }}>{value[0]}</div>
+          )}
+          <span style={{ fontSize:13, color: value ? "#e8e6e1" : "#555" }}>{value || placeholder}</span>
+        </div>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{ transform: open ? "rotate(180deg)" : "none", transition:"transform .2s" }}><polyline points="6,9 12,15 18,9"/></svg>
+      </div>
+      {open && (
+        <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:"#1e1e26", border:"1px solid #2e2e3a", borderRadius:10, zIndex:100, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,.5)" }}>
+          <div style={{ maxHeight:220, overflowY:"auto" }}>
+            {options.map((opt, i) => (
+              <div key={opt} onClick={() => { onChange(opt); setOpen(false); }}
+                style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", cursor:"pointer", background: value===opt ? "#16162e" : "none",
+                  borderLeft: value===opt ? `3px solid ${colors[i % colors.length]}` : "3px solid transparent",
+                  transition:"background .15s" }}
+                onMouseEnter={e => e.currentTarget.style.background = "#1a1a2e"}
+                onMouseLeave={e => e.currentTarget.style.background = value===opt ? "#16162e" : "transparent"}
+              >
+                <div style={{ width:22, height:22, borderRadius:"50%", background:colors[i % colors.length], display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:800, color:"#0f0f11", flexShrink:0 }}>{opt[0]}</div>
+                <span style={{ fontSize:13, color: value===opt ? "#e8e6e1" : "#bbb" }}>{opt}</span>
+                {value===opt && <span style={{ marginLeft:"auto", color:"#5b5bf6", fontSize:14 }}>✓</span>}
+              </div>
+            ))}
+          </div>
+          {/* Add new inline */}
+          {!adding ? (
+            <div onClick={()=>setAdding(true)} style={{ padding:"10px 14px", cursor:"pointer", borderTop:"1px solid #2a2a32", display:"flex", alignItems:"center", gap:8, color:"#5b5bf6", fontSize:12 }}
+              onMouseEnter={e=>e.currentTarget.style.background="#16162e"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              <span style={{fontSize:16,lineHeight:1}}>+</span> Add new name
+            </div>
+          ) : (
+            <div style={{ padding:"10px 12px", borderTop:"1px solid #2a2a32", background:"#16161b" }}>
+              <input value={newVal} onChange={e=>{setNewVal(e.target.value.toUpperCase());setNewErr("");}}
+                onKeyDown={e=>{if(e.key==="Enter")handleAdd();if(e.key==="Escape"){setAdding(false);setNewVal("");}}}
+                autoFocus placeholder="Type name…"
+                style={{width:"100%",background:"#1a1a22",border:`1px solid ${newErr?"#f87171":"#3a3a4a"}`,borderRadius:6,padding:"7px 10px",color:"#e8e6e1",fontSize:12,fontFamily:"inherit",outline:"none",marginBottom:6}}/>
+              {newErr && <p style={{color:"#f87171",fontSize:11,marginBottom:5}}>{newErr}</p>}
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={handleAdd} style={{flex:1,background:"#5b5bf6",border:"none",color:"#fff",padding:"6px",borderRadius:6,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Add</button>
+                <button onClick={()=>{setAdding(false);setNewVal("");setNewErr("");}} style={{background:"none",border:"1px solid #2e2e3a",color:"#888",padding:"6px 10px",borderRadius:6,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DASHBOARD VIEW (scales to 50+ people) ────────────────────────────────────
+const PAGE_SIZE = 10;
+function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebColor, onAddPerson, onPDF, onViewSheet, onNewEntry }) {
+  const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState("name"); // name | bills | payments | balance
+  const [sortDir, setSortDir] = useState(1);
+  const [page, setPage] = useState(0);
+
+  const totalBills    = entries.filter(e=>e.type==="Bill").reduce((s,e)=>s+e.amount,0);
+  const totalPayments = entries.filter(e=>e.type==="Payment").reduce((s,e)=>s+e.amount,0);
+  const totalBalance  = totalPayments - totalBills;
+
+  const filtered = perPersonStats
+    .filter(p => p.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a,b) => {
+      if (sortBy==="name") return sortDir * a.name.localeCompare(b.name);
+      return sortDir * (a[sortBy] - b[sortBy]);
+    });
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paged = filtered.slice(page * PAGE_SIZE, (page+1) * PAGE_SIZE);
+
+  const toggleSort = (col) => {
+    if (sortBy===col) setSortDir(d=>d*-1);
+    else { setSortBy(col); setSortDir(1); }
+    setPage(0);
+  };
+
+  const SortIcon = ({col}) => (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+      style={{marginLeft:4, opacity: sortBy===col?1:0.3, transform: sortBy===col&&sortDir===-1?"rotate(180deg)":"none"}}>
+      <polyline points="6,9 12,15 18,9"/>
+    </svg>
+  );
+
+  return (
+    <div>
+      {/* Title */}
+      <div style={{marginBottom:22, display:"flex", justifyContent:"space-between", alignItems:"flex-end"}}>
+        <div>
+          <h1 style={{fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:28, letterSpacing:"-.03em", marginBottom:4}}>Account Overview</h1>
+          <p style={{color:"#555", fontSize:13}}>{people.length} accounts · {entries.length} transactions</p>
+        </div>
+        <button onClick={onAddPerson} style={{display:"flex",alignItems:"center",gap:7,background:"#1e1e2e",border:"1px solid #3a3a5e",color:"#a5b4fc",padding:"9px 16px",borderRadius:8,cursor:"pointer",fontFamily:"'DM Mono',monospace",fontSize:12}}>
+          + Add Account
+        </button>
+      </div>
+
+      {/* Global summary cards */}
+      <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14, marginBottom:24}}>
+        {[
+          {label:"Total Bills",    value:totalBills,    cls:"balance-neg", icon:"📤"},
+          {label:"Total Payments", value:totalPayments, cls:"balance-pos", icon:"📥"},
+          {label:"Overall Balance",value:totalBalance,  cls:totalBalance>=0?"balance-pos":"balance-neg", icon:"⚖️"},
+        ].map(s=>(
+          <div key={s.label} className="stat-card">
+            <div style={{fontSize:18, marginBottom:6}}>{s.icon}</div>
+            <div style={{color:"#555", fontSize:11, marginBottom:4, letterSpacing:".06em", textTransform:"uppercase"}}>{s.label}</div>
+            <div className={s.cls} style={{fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22}}>{fmt(s.value)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Accounts table */}
+      <div className="card" style={{padding:0, overflow:"hidden", marginBottom:24}}>
+        {/* Table toolbar */}
+        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 18px", borderBottom:"1px solid #2a2a32", gap:12, flexWrap:"wrap"}}>
+          <span style={{fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:15}}>All Accounts</span>
+          <div style={{display:"flex", alignItems:"center", gap:10, flex:1, justifyContent:"flex-end"}}>
+            {/* Search */}
+            <div style={{position:"relative", maxWidth:240, flex:1}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)"}}>
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} placeholder="Search accounts…"
+                style={{width:"100%",background:"#1e1e26",border:"1px solid #2e2e3a",borderRadius:7,padding:"8px 12px 8px 32px",color:"#e8e6e1",fontSize:12,fontFamily:"'DM Mono',monospace",outline:"none"}}/>
+            </div>
+            <span style={{fontSize:12,color:"#555",whiteSpace:"nowrap"}}>{filtered.length} of {people.length}</span>
+          </div>
+        </div>
+
+        {/* Column headers */}
+        <div style={{display:"grid", gridTemplateColumns:"1fr 120px 120px 130px 90px", padding:"10px 18px", background:"#12121a", borderBottom:"1px solid #2a2a32"}}>
+          {[
+            {key:"name",     label:"ACCOUNT"},
+            {key:"bills",    label:"BILLS"},
+            {key:"payments", label:"PAYMENTS"},
+            {key:"balance",  label:"BALANCE"},
+            {key:null,       label:"PDF"},
+          ].map(({key,label},i)=>(
+            <div key={i} onClick={key?()=>toggleSort(key):undefined}
+              style={{display:"flex",alignItems:"center",fontSize:10,color:sortBy===key?"#a5b4fc":"#555",letterSpacing:".08em",fontWeight:600,cursor:key?"pointer":"default",userSelect:"none",justifyContent:i>0?"flex-end":"flex-start"}}>
+              {label}{key&&<SortIcon col={key}/>}
+            </div>
+          ))}
+        </div>
+
+        {/* Rows */}
+        {paged.length === 0 && (
+          <div style={{textAlign:"center",padding:"40px",color:"#555",fontSize:13}}>No accounts match your search.</div>
+        )}
+        {paged.map((p,i)=>{
+          const color = AVATAR_COLORS[people.indexOf(p.name) % AVATAR_COLORS.length];
+          const txCount = entries.filter(e=>e.name===p.name).length;
+          return (
+            <div key={p.name} className="sheet-row" style={{display:"grid", gridTemplateColumns:"1fr 120px 120px 130px 90px", padding:"12px 18px", borderBottom:i<paged.length-1?"1px solid #1e1e26":"none", alignItems:"center"}}>
+              {/* Account */}
+              <div style={{display:"flex", alignItems:"center", gap:11}}>
+                <div style={{width:34,height:34,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:13,color:"#fff",flexShrink:0}}>{p.name[0]}</div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:color,fontFamily:"'Syne',sans-serif"}}>{p.name}</div>
+                  <div style={{fontSize:11,color:"#444",marginTop:1}}>{txCount} transaction{txCount!==1?"s":""}</div>
+                </div>
+              </div>
+              {/* Bills */}
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#f87171"}}>{fmt(p.bills)}</div>
+              </div>
+              {/* Payments */}
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#4ade80"}}>{fmt(p.payments)}</div>
+              </div>
+              {/* Balance */}
+              <div style={{textAlign:"right"}}>
+                <div className={p.balance>=0?"balance-pos":"balance-neg"} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14}}>{fmt(p.balance)}</div>
+                <div style={{fontSize:10,color:"#555",marginTop:1}}>{p.balance>=0?"in credit":"outstanding"}</div>
+              </div>
+              {/* PDF */}
+              <div style={{textAlign:"right"}}>
+                <button className="btn-pdf" style={{padding:"4px 10px",fontSize:11}} onClick={()=>onPDF(p.name)}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>PDF
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Totals footer */}
+        {filtered.length > 0 && (
+          <div style={{display:"grid", gridTemplateColumns:"1fr 120px 120px 130px 90px", padding:"12px 18px", borderTop:"1px solid #2a2a32", background:"#12121a"}}>
+            <span style={{fontSize:11,color:"#555",fontWeight:600}}>TOTAL ({filtered.length} accounts)</span>
+            <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#f87171"}}>{fmt(filtered.reduce((s,p)=>s+p.bills,0))}</div>
+            <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#4ade80"}}>{fmt(filtered.reduce((s,p)=>s+p.payments,0))}</div>
+            <div style={{textAlign:"right"}}>
+              <span className={filtered.reduce((s,p)=>s+p.balance,0)>=0?"balance-pos":"balance-neg"} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:13}}>{fmt(filtered.reduce((s,p)=>s+p.balance,0))}</span>
+            </div>
+            <span/>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"12px 18px",borderTop:"1px solid #1e1e26"}}>
+            <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={page===0}
+              style={{background:"none",border:"1px solid #2e2e3a",color:page===0?"#333":"#888",padding:"5px 12px",borderRadius:6,cursor:page===0?"default":"pointer",fontFamily:"inherit",fontSize:12}}>← Prev</button>
+            {Array.from({length:totalPages},(_,i)=>(
+              <button key={i} onClick={()=>setPage(i)}
+                style={{background:page===i?"#5b5bf6":"none",border:`1px solid ${page===i?"#5b5bf6":"#2e2e3a"}`,color:page===i?"#fff":"#888",width:32,height:32,borderRadius:6,cursor:"pointer",fontFamily:"inherit",fontSize:12}}>
+                {i+1}
+              </button>
+            ))}
+            <button onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))} disabled={page===totalPages-1}
+              style={{background:"none",border:"1px solid #2e2e3a",color:page===totalPages-1?"#333":"#888",padding:"5px 12px",borderRadius:6,cursor:page===totalPages-1?"default":"pointer",fontFamily:"inherit",fontSize:12}}>Next →</button>
+          </div>
+        )}
+      </div>
+
+      {/* ── ACCOUNT DETAIL VIEWER ── */}
+      <AccountDetail entries={entries} people={people} avatarColor={avatarColor} fmt={fmt} ebColor={ebColor} onPDF={onPDF} />
+    </div>
+  );
+}
+
+// ── ACCOUNT DETAIL COMPONENT ──────────────────────────────────────────────────
+function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
+  const [selected, setSelected] = useState(null);
+  const [typeQuery, setTypeQuery] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [acctSearch, setAcctSearch] = useState("");
+  const selectorRef = useRef();
+
+  // close suggestions on outside click
+  const handleOutside = (e) => { if (selectorRef.current && !selectorRef.current.contains(e.target)) setShowSuggestions(false); };
+  useState(() => { document.addEventListener("mousedown", handleOutside); return () => document.removeEventListener("mousedown", handleOutside); });
+
+  const suggestions = typeQuery.trim()
+    ? people.filter(p => p.toLowerCase().includes(typeQuery.trim().toLowerCase()))
+    : people;
+
+  const acctEntries = selected
+    ? entries.filter(e => {
+        if (e.name !== selected) return false;
+        if (!acctSearch.trim()) return true;
+        const q = acctSearch.trim().toLowerCase();
+        return (
+          (e.txnId && e.txnId.toLowerCase().includes(q)) ||
+          (e.source && e.source.toLowerCase().includes(q)) ||
+          (e.entryBy && e.entryBy.toLowerCase().includes(q)) ||
+          e.type.toLowerCase().includes(q) ||
+          String(e.amount).includes(q)
+        );
+      })
+    : [];
+  const bills    = acctEntries.filter(e => e.type === "Bill").reduce((s, e) => s + e.amount, 0);
+  const payments = acctEntries.filter(e => e.type === "Payment").reduce((s, e) => s + e.amount, 0);
+  const balance  = payments - bills;
+  const color    = selected ? avatarColor(selected) : "#5b5bf6";
+
+  let running = 0;
+
+  return (
+    <div className="card" style={{ padding:0, overflow:"hidden" }}>
+      {/* Header with account selector */}
+      <div style={{ padding:"18px 20px", borderBottom:"1px solid #2a2a32", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
+        <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:16 }}>Account Detail View</span>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          {/* Type-to-search account selector */}
+          <div ref={selectorRef} style={{ position:"relative" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, background:"#1e1e26", border:`1px solid ${selected ? color+"88" : "#2e2e3a"}`, borderRadius:8, padding:"8px 12px", minWidth:240, transition:"border .2s" }}>
+              {/* Avatar dot when selected */}
+              {selected && (
+                <div style={{ width:22, height:22, borderRadius:"50%", background:color, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:800, color:"#fff", flexShrink:0 }}>{selected[0]}</div>
+              )}
+              {!selected && (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{flexShrink:0}}>
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+              )}
+              <input
+                value={selected && !showSuggestions ? selected : typeQuery}
+                onChange={e => { setTypeQuery(e.target.value); setSelected(null); setShowSuggestions(true); setAcctSearch(""); }}
+                onFocus={() => { setShowSuggestions(true); if (selected) setTypeQuery(""); }}
+                placeholder="Type account name…"
+                style={{ background:"none", border:"none", outline:"none", fontSize:13, color:"#e8e6e1", fontFamily:"'DM Mono',monospace", flex:1, minWidth:0 }}
+              />
+              {(typeQuery || selected) && (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2"
+                  style={{ flexShrink:0, transform: showSuggestions?"rotate(180deg)":"none", transition:"transform .2s" }}>
+                  <polyline points="6,9 12,15 18,9"/>
+                </svg>
+              )}
+            </div>
+            {/* Suggestions list */}
+            {showSuggestions && (
+              <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:"#1e1e26", border:"1px solid #2e2e3a", borderRadius:10, zIndex:100, boxShadow:"0 8px 28px rgba(0,0,0,.7)", maxHeight:280, overflowY:"auto" }}>
+                {suggestions.length === 0 && (
+                  <div style={{ padding:"14px 16px", color:"#555", fontSize:12 }}>No accounts match "{typeQuery}"</div>
+                )}
+                {suggestions.map((p, i) => {
+                  const c = AVATAR_COLORS[people.indexOf(p) % AVATAR_COLORS.length];
+                  const cnt = entries.filter(e => e.name === p).length;
+                  // highlight matching part
+                  const q = typeQuery.trim().toLowerCase();
+                  const idx = p.toLowerCase().indexOf(q);
+                  const before = idx >= 0 ? p.slice(0, idx) : p;
+                  const match  = idx >= 0 ? p.slice(idx, idx + q.length) : "";
+                  const after  = idx >= 0 ? p.slice(idx + q.length) : "";
+                  return (
+                    <div key={p}
+                      onClick={() => { setSelected(p); setTypeQuery(""); setShowSuggestions(false); setAcctSearch(""); }}
+                      style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", cursor:"pointer",
+                        background: selected===p ? "#16162e" : "transparent",
+                        borderLeft:`3px solid ${selected===p ? c : "transparent"}` }}
+                      onMouseEnter={e=>e.currentTarget.style.background="#1a1a2e"}
+                      onMouseLeave={e=>e.currentTarget.style.background=selected===p?"#16162e":"transparent"}>
+                      <div style={{ width:28, height:28, borderRadius:"50%", background:c, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800, color:"#fff", flexShrink:0 }}>{p[0]}</div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:13, fontWeight:600, color:"#e8e6e1" }}>
+                          {before}<span style={{ color:"#5b5bf6", background:"#5b5bf620" }}>{match}</span>{after}
+                        </div>
+                        <div style={{ fontSize:10, color:"#555", marginTop:1 }}>{cnt} transaction{cnt!==1?"s":""}</div>
+                      </div>
+                      {selected===p && <span style={{ color:"#5b5bf6" }}>✓</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {selected && (
+            <button className="btn-pdf" onClick={() => onPDF(selected)}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+              PDF
+            </button>
+          )}
+          {selected && (
+            <button onClick={() => { setSelected(null); setAcctSearch(""); }}
+              style={{ background:"#2d1a1a", border:"1px solid #5c2020", color:"#f87171", fontFamily:"'DM Mono',monospace", fontSize:12, padding:"8px 14px", borderRadius:8, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Search bar — shown when account is selected */}
+      {selected && (
+        <div style={{ padding:"12px 20px", borderBottom:"1px solid #2a2a32", background:"#13131a" }}>
+          <div style={{ position:"relative" }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2"
+              style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)" }}>
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input
+              value={acctSearch}
+              onChange={e => setAcctSearch(e.target.value)}
+              placeholder="Search by Sub ID, type, details, amount, prepared by…"
+              style={{ width:"100%", background:"#1e1e26", border:"1px solid #2e2e3a", borderRadius:8, padding:"10px 36px 10px 36px", color:"#e8e6e1", fontSize:12, fontFamily:"'DM Mono',monospace", outline:"none", transition:"border .2s" }}
+              onFocus={e => e.target.style.borderColor="#5b5bf6"}
+              onBlur={e => e.target.style.borderColor="#2e2e3a"}
+            />
+            {acctSearch && (
+              <button onClick={() => setAcctSearch("")}
+                style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:18, lineHeight:1, padding:0 }}>×</button>
+            )}
+          </div>
+          {acctSearch && (
+            <p style={{ fontSize:11, color:"#555", marginTop:6 }}>
+              {acctEntries.length} result{acctEntries.length!==1?"s":""} for "{acctSearch}"
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!selected && (
+        <div style={{ padding:"50px 20px", textAlign:"center" }}>
+          <div style={{ fontSize:36, marginBottom:12 }}>👤</div>
+          <p style={{ color:"#555", fontSize:13 }}>Select an account above to view all their transactions</p>
+        </div>
+      )}
+
+      {/* Account selected */}
+      {selected && (
+        <>
+          {/* Summary strip */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", borderBottom:"1px solid #2a2a32" }}>
+            {[
+              { label:"Total Bills",    value:bills,    color:"#f87171" },
+              { label:"Total Payments", value:payments, color:"#4ade80" },
+              { label:"Balance",        value:balance,  color:balance>=0?"#4ade80":"#f87171" },
+            ].map((s, i) => (
+              <div key={i} style={{ padding:"14px 20px", borderRight:i<2?"1px solid #2a2a32":"none" }}>
+                <div style={{ fontSize:10, color:"#555", letterSpacing:".07em", textTransform:"uppercase", marginBottom:4 }}>{s.label}</div>
+                <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:18, color:s.color }}>{fmt(s.value)}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Column headers */}
+          <div style={{ display:"grid", gridTemplateColumns:"110px 130px 80px 130px 110px 110px 55px", padding:"10px 20px", background:"#12121a", borderBottom:"1px solid #2a2a32" }}>
+            {["SUB. ID","DATE","TYPE","DETAILS","AMOUNT","BALANCE","DOCS"].map((h,i) => (
+              <span key={i} style={{ fontSize:10, color: i===0?"#a5b4fc":i===1?"#f59e0b":"#555", letterSpacing:".08em", fontWeight:500 }}>{h}</span>
+            ))}
+          </div>
+
+          {/* Rows */}
+          {acctEntries.length === 0 && (
+            <div style={{ padding:"30px", textAlign:"center", color:"#555", fontSize:13 }}>No transactions for {selected} yet.</div>
+          )}
+          {acctEntries.map((e, i) => {
+            running += e.type === "Payment" ? e.amount : -e.amount;
+            const bal = running;
+            return (
+              <div key={e.id} className="sheet-row" style={{ display:"grid", gridTemplateColumns:"110px 130px 80px 130px 110px 110px 55px", padding:"11px 20px", borderBottom:i<acctEntries.length-1?"1px solid #1e1e26":"none", alignItems:"center" }}>
+                {/* Sub ID */}
+                <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:"#a5b4fc", background:"#1a1a2e", border:"1px solid #3a3a5e", padding:"3px 7px", borderRadius:5, display:"inline-block" }}>{e.txnId||"—"}</span>
+                {/* Date */}
+                <div>
+                  {e.createdAt ? (
+                    <>
+                      <div style={{ fontSize:11, color:"#e8e6e1" }}>{new Date(e.createdAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div>
+                      <div style={{ fontSize:10, color:"#555" }}>{new Date(e.createdAt).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}</div>
+                    </>
+                  ) : <span style={{color:"#333",fontSize:11}}>—</span>}
+                </div>
+                {/* Type */}
+                <span className={`tag tag-${e.type.toLowerCase()}`}>{e.type}</span>
+                {/* Details */}
+                <span style={{ fontSize:12, color:"#888", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.source || <span style={{color:"#333"}}>—</span>}</span>
+                {/* Amount */}
+                <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13, color:e.type==="Bill"?"#f87171":"#4ade80" }}>
+                  {e.type==="Bill"?"-":"+"}{fmt(e.amount)}
+                </span>
+                {/* Running balance */}
+                <span className={bal>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13 }}>{fmt(bal)}</span>
+                {/* Docs */}
+                <div>
+                  {e.docs&&e.docs.length>0
+                    ? <span className="doc-badge">📎 {e.docs.length}</span>
+                    : <span style={{color:"#333",fontSize:11}}>—</span>}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Footer */}
+          {acctEntries.length > 0 && (
+            <div style={{ display:"grid", gridTemplateColumns:"110px 130px 80px 130px 110px 110px 55px", padding:"12px 20px", borderTop:"1px solid #2a2a32", background:"#12121a" }}>
+              <span/><span/><span/>
+              <span style={{ fontSize:11, color:"#888", fontWeight:600 }}>TOTAL</span>
+              <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:13, color:"#e8e6e1" }}>{fmt(bills+payments)}</span>
+              <span className={balance>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:13 }}>{fmt(balance)}</span>
+              <span/>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── MAIN APP ──────────────────────────────────────────────────────────────────
+function App() {
+  const [entries, setEntries]         = useState(initialData);
+  const [people, setPeople]           = useState(DEFAULT_PEOPLE);
+  const [entryByList, setEntryByList] = useState(DEFAULT_ENTRY_BY);
+  const [form, setForm]               = useState({ name:"LYNN", type:"Bill", amount:"", source:"", entryBy:"AZIM", docs:[] });
+  const [errors, setErrors]           = useState({});
+  const [submitted, setSubmitted]     = useState(false);
+  const [editId, setEditId]           = useState(null);
+  const [view, setView]               = useState("dashboard");
+  const [showAddPerson, setShowAddPerson] = useState(false);
+  const [newPersonName, setNewPersonName] = useState("");
+  const [newPersonError, setNewPersonError] = useState("");
+  const [filterName, setFilterName]   = useState("ALL");
+  const [sheetSearch, setSheetSearch]  = useState("");
+  const [showPdfModal, setShowPdfModal] = useState(false);
+
+  const totals = useMemo(() => {
+    const f = filterName === "ALL" ? entries : entries.filter(e => e.name === filterName);
+    const bills = f.filter(e=>e.type==="Bill").reduce((s,e)=>s+e.amount,0);
+    const payments = f.filter(e=>e.type==="Payment").reduce((s,e)=>s+e.amount,0);
+    return { bills, payments, balance: payments - bills };
+  }, [entries, filterName]);
+
+  const perPersonStats = useMemo(() => people.map(p => {
+    const bills    = entries.filter(e=>e.name===p&&e.type==="Bill").reduce((s,e)=>s+e.amount,0);
+    const payments = entries.filter(e=>e.name===p&&e.type==="Payment").reduce((s,e)=>s+e.amount,0);
+    return { name:p, bills, payments, balance:payments-bills };
+  }), [entries, people]);
+
+  const validate = () => {
+    const errs = {};
+    if (!form.name) errs.name = "Select a name";
+    if (!form.amount || isNaN(form.amount) || Number(form.amount) <= 0) errs.amount = "Enter a valid amount";
+    if (!form.entryBy) errs.entryBy = "Select who prepared this entry";
+    return errs;
+  };
+
+  const handleSubmit = () => {
+    const errs = validate();
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    const row = { name:form.name, type:form.type, amount:Number(form.amount), source:form.source.trim(), entryBy:form.entryBy, docs:form.docs };
+    if (editId !== null) {
+      setEntries(prev => prev.map(e => e.id===editId ? {...e,...row} : e));
+      setEditId(null);
+    } else {
+      setEntries(prev => [...prev, { id:nextId++, txnId:makeTxnId(nextTxnNum++), createdAt:new Date().toISOString(), ...row }]);
+    }
+    setForm({ name:people[0], type:"Bill", amount:"", source:"", entryBy:entryByList[0], docs:[] });
+    setErrors({});
+    setSubmitted(true);
+    setTimeout(() => setSubmitted(false), 2200);
+  };
+
+  const handleEdit = (entry) => {
+    setEditId(entry.id);
+    setForm({ name:entry.name, type:entry.type, amount:String(entry.amount), source:entry.source||"", entryBy:entry.entryBy||"", docs:entry.docs||[] });
+    setView("form");
+  };
+  const handleDelete = (id) => setEntries(prev => prev.filter(e => e.id !== id));
+  const handleNew = () => { setEditId(null); setForm({ name:people[0], type:"Bill", amount:"", source:"", entryBy:entryByList[0], docs:[] }); setErrors({}); setView("form"); };
+
+  const handleAddPerson = () => {
+    const t = newPersonName.trim().toUpperCase();
+    if (!t) { setNewPersonError("Enter a name"); return; }
+    if (people.includes(t)) { setNewPersonError("Already exists"); return; }
+    setPeople(prev => [...prev, t]);
+    setNewPersonName(""); setNewPersonError(""); setShowAddPerson(false);
+  };
+
+  const avatarColor  = (name) => AVATAR_COLORS[people.indexOf(name) % AVATAR_COLORS.length];
+  const ebColor      = (name) => EB_COLORS[entryByList.indexOf(name) % EB_COLORS.length];
+  const filteredEntries = useMemo(() => {
+    let res = filterName === "ALL" ? entries : entries.filter(e => e.name === filterName);
+    if (sheetSearch.trim()) {
+      const q = sheetSearch.trim().toLowerCase();
+      res = res.filter(e =>
+        (e.txnId && e.txnId.toLowerCase().includes(q)) ||
+        e.name.toLowerCase().includes(q) ||
+        (e.source && e.source.toLowerCase().includes(q)) ||
+        (e.entryBy && e.entryBy.toLowerCase().includes(q))
+      );
+    }
+    return res;
+  }, [entries, filterName, sheetSearch]);
+
+  return (
+    <div style={{ fontFamily:"'DM Mono',monospace", minHeight:"100vh", background:"#0f0f11", color:"#e8e6e1" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#1a1a1e}::-webkit-scrollbar-thumb{background:#3a3a44;border-radius:4px}
+        input{outline:none}
+        .nav-btn{background:none;border:none;cursor:pointer;padding:8px 18px;border-radius:6px;font-family:'DM Mono',monospace;font-size:13px;color:#888;transition:all .2s}
+        .nav-btn.active{background:#1e1e24;color:#e8e6e1}
+        .nav-btn:hover:not(.active){color:#c8c6c1}
+        .card{background:#16161b;border:1px solid #2a2a32;border-radius:12px;padding:24px}
+        .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:500;letter-spacing:.04em}
+        .tag-bill{background:#2d1a1a;color:#f87171;border:1px solid #3d2020}
+        .tag-payment{background:#1a2d1a;color:#4ade80;border:1px solid #203d20}
+        .input-field{width:100%;background:#1e1e26;border:1px solid #2e2e3a;border-radius:8px;padding:12px 14px;font-family:'DM Mono',monospace;font-size:14px;color:#e8e6e1;transition:border .2s}
+        .input-field:focus{border-color:#5b5bf6}
+        .input-field.error{border-color:#f87171}
+        .btn-primary{background:#5b5bf6;border:none;color:#fff;font-family:'DM Mono',monospace;font-size:13px;font-weight:500;padding:12px 28px;border-radius:8px;cursor:pointer;transition:background .2s,transform .1s}
+        .btn-primary:hover{background:#4a4ae0}
+        .btn-primary:active{transform:scale(.97)}
+        .btn-ghost{background:none;border:1px solid #2e2e3a;color:#888;font-family:'DM Mono',monospace;font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;transition:all .2s}
+        .btn-ghost:hover{border-color:#5b5bf6;color:#5b5bf6}
+        .btn-danger{background:none;border:1px solid #3d2020;color:#f87171;font-family:'DM Mono',monospace;font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;transition:all .2s}
+        .btn-danger:hover{background:#2d1a1a}
+        .btn-pdf{background:#1a1a2e;border:1px solid #3a3a5e;color:#a5b4fc;font-family:'DM Mono',monospace;font-size:12px;padding:6px 14px;border-radius:6px;cursor:pointer;transition:all .2s;display:inline-flex;align-items:center;gap:5px}
+        .btn-pdf:hover{background:#22224a;border-color:#5b5bf6;color:#c7d2fe}
+        .stat-card{background:#16161b;border:1px solid #2a2a32;border-radius:12px;padding:20px 24px}
+        .balance-pos{color:#4ade80}
+        .balance-neg{color:#f87171}
+        .toast{position:fixed;bottom:32px;right:32px;background:#1e2d1e;border:1px solid #203d20;color:#4ade80;padding:12px 20px;border-radius:8px;font-size:13px;animation:slideUp .3s ease;z-index:999}
+        @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+        .sheet-row:hover{background:#1a1a22}
+        .sheet-row{transition:background .15s}
+        .filter-chip{padding:5px 14px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid #2a2a32;background:none;font-family:'DM Mono',monospace;color:#888;transition:all .2s}
+        .filter-chip.active{background:#1e1e2e;border-color:#5b5bf6;color:#e8e6e1}
+        .filter-chip:hover:not(.active){border-color:#3a3a42;color:#bbb}
+        .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:center;justify-content:center;z-index:1000}
+        .modal{background:#16161b;border:1px solid #2a2a32;border-radius:14px;padding:28px;width:420px;max-width:94vw}
+        .pdf-card{border:2px solid #2a2a32;border-radius:10px;padding:14px 18px;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:space-between}
+        .pdf-card:hover{border-color:#5b5bf6;background:#1a1a2e}
+        .doc-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;background:#1a1a2e;border:1px solid #3a3a5e;color:#a5b4fc;padding:2px 7px;border-radius:4px;cursor:pointer}
+        .eb-pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:500}
+        .sheet-scroll::-webkit-scrollbar{height:6px}
+        .sheet-scroll::-webkit-scrollbar-track{background:#12121a;border-radius:3px}
+        .sheet-scroll::-webkit-scrollbar-thumb{background:#3a3a5e;border-radius:3px}
+        .sheet-scroll::-webkit-scrollbar-thumb:hover{background:#5b5bf6}
+      `}</style>
+
+      {/* ── HEADER ── */}
+      <div style={{ borderBottom:"1px solid #1e1e26", padding:"0 32px", display:"flex", alignItems:"center", justifyContent:"space-between", height:56 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ width:28, height:28, background:"#5b5bf6", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          </div>
+          <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:16, letterSpacing:"-.02em" }}>Paragon</span>
+        </div>
+        <nav style={{ display:"flex", gap:4 }}>
+          {["dashboard","form","sheet"].map(v => (
+            <button key={v} className={`nav-btn ${view===v?"active":""}`} onClick={()=>setView(v)}>
+              {v==="dashboard"?"📊 Dashboard":v==="form"?"✏️ Entry":"📋 Sheet"}
+            </button>
+          ))}
+        </nav>
+        <div style={{ display:"flex", gap:8 }}>
+          <button className="btn-pdf" onClick={()=>setShowPdfModal(true)}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+            PDF Report
+          </button>
+          <button className="btn-primary" style={{ padding:"8px 18px", fontSize:12 }} onClick={handleNew}>+ New Entry</button>
+        </div>
+      </div>
+
+      <div style={{ maxWidth:1020, margin:"0 auto", padding:"32px 24px" }}>
+
+        {/* ── DASHBOARD ── */}
+        {view==="dashboard" && (
+          <DashboardView
+            entries={entries} people={people} perPersonStats={perPersonStats}
+            avatarColor={avatarColor} fmt={fmt} ebColor={ebColor}
+            onAddPerson={()=>setShowAddPerson(true)}
+            onPDF={(name)=>generatePDF(name,entries,people)}
+            onViewSheet={()=>setView("sheet")}
+            onNewEntry={handleNew}
+          />
+        )}
+
+        {/* ── FORM ── */}
+        {view==="form" && (
+          <div style={{ maxWidth:580 }}>
+            <div style={{ marginBottom:26 }}>
+              <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:4}}>
+                <h1 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:26, letterSpacing:"-.03em" }}>{editId!==null?"Edit Entry":"Paragon"}</h1>
+                {editId!==null && (() => { const e = entries.find(x=>x.id===editId); return e?.txnId ? <span style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:600,color:"#a5b4fc",background:"#1a1a2e",border:"1px solid #3a3a5e",padding:"4px 10px",borderRadius:6}}>{e.txnId}</span> : null; })()}
+              </div>
+              <p style={{ color:"#555", fontSize:13 }}>Account of Paragon — fill in all details</p>
+            </div>
+            <div className="card" style={{ display:"flex", flexDirection:"column", gap:20 }}>
+
+              {/* 1. Prepared By */}
+              <div>
+                <DropdownSelect
+                  label="Prepared By"
+                  value={form.entryBy}
+                  options={entryByList}
+                  placeholder="Select who prepared this entry…"
+                  onChange={v=>{setForm(f=>({...f,entryBy:v}));setErrors(er=>({...er,entryBy:""}));}}
+                  onAddNew={name=>setEntryByList(prev=>[...prev,name])}
+                />
+                {errors.entryBy&&<p style={{ color:"#f87171", fontSize:12, marginTop:6 }}>{errors.entryBy}</p>}
+              </div>
+
+              {/* 2. Account Name */}
+              <div>
+                <DropdownSelect
+                  label="Account Name"
+                  value={form.name}
+                  options={people}
+                  colors={AVATAR_COLORS}
+                  placeholder="Select account name…"
+                  onChange={v=>{setForm(f=>({...f,name:v}));setErrors(er=>({...er,name:""}));}}
+                  onAddNew={name=>setPeople(prev=>[...prev,name])}
+                />
+                {errors.name&&<p style={{ color:"#f87171", fontSize:12, marginTop:6 }}>{errors.name}</p>}
+              </div>
+
+              {/* 3. Details */}
+              <div>
+                <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:8, letterSpacing:".06em", textTransform:"uppercase" }}>
+                  Details <span style={{ fontSize:10, color:"#444", fontWeight:400, letterSpacing:0, textTransform:"none" }}>optional</span>
+                </label>
+                <input className="input-field" placeholder="e.g. Bank, Cash, Office, Client…" value={form.source}
+                  onChange={e=>setForm(f=>({...f,source:e.target.value}))}/>
+              </div>
+
+              {/* 4. Type */}
+              <div>
+                <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:10, letterSpacing:".06em", textTransform:"uppercase" }}>Type</label>
+                <div style={{ display:"flex", gap:10 }}>
+                  {TYPES.map(t => (
+                    <button key={t} onClick={()=>setForm(f=>({...f,type:t}))}
+                      style={{ flex:1, padding:"12px", borderRadius:8, border:"1px solid", cursor:"pointer", fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:500, transition:"all .2s",
+                        background:form.type===t?(t==="Bill"?"#2d1a1a":"#1a2d1a"):"#1e1e26",
+                        borderColor:form.type===t?(t==="Bill"?"#f87171":"#4ade80"):"#2e2e3a",
+                        color:form.type===t?(t==="Bill"?"#f87171":"#4ade80"):"#888" }}>
+                      {t==="Bill"?"📤 Bill":"📥 Payment"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 5. Amount */}
+              <div>
+                <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:8, letterSpacing:".06em", textTransform:"uppercase" }}>Amount ($)</label>
+                <input className={`input-field ${errors.amount?"error":""}`} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount}
+                  onChange={e=>{setForm(f=>({...f,amount:e.target.value}));setErrors(er=>({...er,amount:""}));}}/>
+                {errors.amount&&<p style={{ color:"#f87171", fontSize:12, marginTop:6 }}>{errors.amount}</p>}
+              </div>
+
+              {/* 6. Documents */}
+              <div>
+                <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#888", marginBottom:10, letterSpacing:".06em", textTransform:"uppercase" }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                  Documents <span style={{ fontSize:10, color:"#444", fontWeight:400, letterSpacing:0, textTransform:"none" }}>optional</span>
+                </label>
+                <DocUploader docs={form.docs} onChange={upd=>setForm(f=>({...f,docs:typeof upd==="function"?upd(f.docs):upd}))}/>
+              </div>
+
+              {/* Summary preview */}
+              {form.amount && !isNaN(form.amount) && Number(form.amount) > 0 && (
+                <div style={{ background:"#1a1a22", border:"1px solid #2a2a32", borderRadius:8, padding:"11px 14px", fontSize:13, color:"#888" }}>
+                  <strong style={{ color:avatarColor(form.name) }}>{form.name}</strong>
+                  {form.source && <span> · <span style={{ color:"#666" }}>{form.source}</span></span>}
+                  {" "} — {form.type==="Bill"?"📤 decreases":"📥 increases"} balance by{" "}
+                  <strong style={{ color:"#e8e6e1" }}>{fmt(Number(form.amount))}</strong>
+                  {form.entryBy && <span style={{ marginLeft:8, fontSize:11, color:ebColor(form.entryBy) }}>· prep. by {form.entryBy}</span>}
+                  {form.docs.length>0&&<span style={{ color:"#a5b4fc", marginLeft:8 }}>· 📎{form.docs.length}</span>}
+                  <span style={{ marginLeft:8, fontSize:11, color:"#f59e0b" }}>· 🕐 {new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</span>
+                </div>
+              )}
+
+              <div style={{ display:"flex", gap:10 }}>
+                <button className="btn-primary" style={{ flex:1 }} onClick={handleSubmit}>{editId!==null?"Update Entry":"Add Entry"}</button>
+                {editId!==null&&<button className="btn-ghost" onClick={()=>{setEditId(null);setForm({name:people[0],type:"Bill",amount:"",source:"",entryBy:entryByList[0],docs:[]});setErrors({});}}>Cancel</button>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── SHEET ── */}
+        {view==="sheet" && (
+          <div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:20 }}>
+              <div>
+                <h1 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:26, letterSpacing:"-.03em", marginBottom:4 }}>Account of Paragon</h1>
+                <p style={{ color:"#555", fontSize:13 }}>{filteredEntries.length} of {entries.length} rows</p>
+              </div>
+              <div style={{ display:"flex", gap:8 }}>
+                {filterName!=="ALL"&&<button className="btn-pdf" onClick={()=>generatePDF(filterName,entries,people)}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+                  PDF — {filterName}
+                </button>}
+                <button className="btn-primary" style={{ fontSize:12, padding:"8px 18px" }} onClick={handleNew}>+ New Entry</button>
+              </div>
+            </div>
+            {/* Search bar */}
+            <div style={{ position:"relative", marginBottom:14 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{ position:"absolute", left:13, top:"50%", transform:"translateY(-50%)" }}>
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                value={sheetSearch}
+                onChange={e=>setSheetSearch(e.target.value)}
+                placeholder="Search by Submission ID (e.g. TXN-0001), name, details, prepared by…"
+                style={{ width:"100%", background:"#16161b", border:"1px solid #2e2e3a", borderRadius:8, padding:"11px 14px 11px 38px", color:"#e8e6e1", fontSize:13, fontFamily:"'DM Mono',monospace", outline:"none", transition:"border .2s" }}
+                onFocus={e=>e.target.style.borderColor="#5b5bf6"}
+                onBlur={e=>e.target.style.borderColor="#2e2e3a"}
+              />
+              {sheetSearch && (
+                <button onClick={()=>setSheetSearch("")} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:16, lineHeight:1 }}>×</button>
+              )}
+            </div>
+            <div style={{ display:"flex", gap:8, marginBottom:18, flexWrap:"wrap" }}>
+              <button className={`filter-chip ${filterName==="ALL"?"active":""}`} onClick={()=>setFilterName("ALL")}>All</button>
+              {people.map(p=><button key={p} className={`filter-chip ${filterName===p?"active":""}`} onClick={()=>setFilterName(p)}>{p}</button>)}
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8, color:"#444", fontSize:11 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+              Scroll horizontally to see all columns
+            </div>
+            <div className="card" style={{ padding:0, overflow:"hidden" }}>
+              <div className="sheet-scroll" style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
+              <div style={{ minWidth:1210 }}>
+              {/* Order: TXN ID · DATE · PREPARED BY · NAME · SOURCE · TYPE · AMOUNT · BALANCE · DOCS · ACTIONS */}
+              <div style={{ display:"grid", gridTemplateColumns:"120px 140px 155px 140px 130px 85px 110px 120px 60px 130px", padding:"11px 18px", borderBottom:"1px solid #2a2a32", background:"#12121a", position:"sticky", top:0, zIndex:2 }}>
+                {["SUBMISSION ID","DATE","PREPARED BY","NAME","DETAILS","TYPE","AMOUNT","BALANCE","DOCS","ACTIONS"].map((h,i)=>(
+                  <span key={i} style={{ fontSize:10, color: i===0?"#a5b4fc":i===1?"#f59e0b":"#555", letterSpacing:".08em", fontWeight:500 }}>{h}</span>
+                ))}
+              </div>
+              {(() => {
+                const running = {};
+                return filteredEntries.map((e, i) => {
+                  if (!running[e.name]) running[e.name] = 0;
+                  running[e.name] += e.type==="Payment"?e.amount:-e.amount;
+                  const bal = running[e.name];
+                  const idx = people.indexOf(e.name);
+                  const eidx = entryByList.indexOf(e.entryBy);
+                  const eColor = EB_COLORS[eidx>=0?eidx%EB_COLORS.length:0];
+                  return (
+                    <div key={e.id} className="sheet-row" style={{ display:"grid", gridTemplateColumns:"120px 140px 155px 140px 130px 85px 110px 120px 60px 130px", padding:"11px 18px", borderBottom:i<filteredEntries.length-1?"1px solid #1e1e26":"none", alignItems:"center" }}>
+                      {/* 0. SUBMISSION ID */}
+                      <div>
+                        <span style={{ display:"inline-block", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:"#a5b4fc", background:"#1a1a2e", border:"1px solid #3a3a5e", padding:"3px 7px", borderRadius:5, letterSpacing:".04em" }}>
+                          {e.txnId || "—"}
+                        </span>
+                      </div>
+                      {/* 1. DATE */}
+                      <div>
+                        {e.createdAt ? (
+                          <div>
+                            <div style={{ fontSize:11, color:"#e8e6e1", fontWeight:500 }}>{new Date(e.createdAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div>
+                            <div style={{ fontSize:10, color:"#555", marginTop:1 }}>{new Date(e.createdAt).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}</div>
+                          </div>
+                        ) : <span style={{color:"#333",fontSize:11}}>—</span>}
+                      </div>
+                      {/* 2. PREPARED BY */}
+                      <div>
+                        {e.entryBy ? (
+                          <span style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"3px 8px", borderRadius:20, fontSize:11, fontWeight:500, background:`${eColor}15`, border:`1px solid ${eColor}40`, color:eColor }}>
+                            <span style={{ width:14, height:14, borderRadius:"50%", background:eColor, display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:8, color:"#0f0f11", fontWeight:900 }}>{e.entryBy[0]}</span>
+                            {e.entryBy}
+                          </span>
+                        ) : <span style={{color:"#333",fontSize:11}}>—</span>}
+                      </div>
+                      {/* 2. NAME */}
+                      <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                        <div style={{ width:22, height:22, borderRadius:"50%", background:AVATAR_COLORS[idx%AVATAR_COLORS.length], display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:800, color:"#fff", flexShrink:0 }}>{e.name[0]}</div>
+                        <span style={{ fontSize:12, fontWeight:600, color:AVATAR_COLORS[idx%AVATAR_COLORS.length] }}>{e.name}</span>
+                      </div>
+                      {/* 3. SOURCE */}
+                      <span style={{ fontSize:12, color:"#888", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.source||<span style={{color:"#333"}}>—</span>}</span>
+                      {/* 4. TYPE */}
+                      <span className={`tag tag-${e.type.toLowerCase()}`}>{e.type}</span>
+                      {/* 5. AMOUNT */}
+                      <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13 }}>{fmt(e.amount)}</span>
+                      {/* 6. BALANCE */}
+                      <span className={bal>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13 }}>{fmt(bal)}</span>
+                      {/* 7. DOCS */}
+                      <div>
+                        {e.docs&&e.docs.length>0
+                          ?<span className="doc-badge" onClick={()=>handleEdit(e)}>📎 {e.docs.length}</span>
+                          :<span style={{fontSize:11,color:"#333"}}>—</span>}
+                      </div>
+                      {/* 8. ACTIONS */}
+                      <div style={{ display:"flex", gap:6 }}>
+                        <button className="btn-ghost" onClick={()=>handleEdit(e)}>Edit</button>
+                        <button className="btn-danger" onClick={()=>handleDelete(e.id)}>Del</button>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+              {filteredEntries.length===0&&<div style={{ textAlign:"center", padding:"40px", color:"#555", fontSize:13 }}>No entries. <span style={{ color:"#5b5bf6", cursor:"pointer" }} onClick={handleNew}>Add one →</span></div>}
+              {filteredEntries.length>0&&(
+                <div style={{ display:"grid", gridTemplateColumns:"120px 140px 155px 140px 130px 85px 110px 120px 60px 130px", padding:"12px 18px", borderTop:"1px solid #2a2a32", background:"#12121a" }}>
+                  <span/><span/><span style={{ fontSize:11, color:"#888", fontWeight:500 }}>TOTAL</span><span/><span/><span/>
+                  <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:13, color:"#e8e6e1" }}>{fmt(totals.bills+totals.payments)}</span>
+                  <span className={totals.balance>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:13 }}>{fmt(totals.balance)}</span>
+                  <span/><span/>
+                </div>
+              )}
+              </div>{/* end minWidth */}
+              </div>{/* end scroll wrapper */}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── PDF MODAL ── */}
+      {showPdfModal&&(
+        <div className="modal-overlay" onClick={()=>setShowPdfModal(false)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
+              <div style={{ width:32, height:32, background:"#1a1a2e", border:"1px solid #3a3a5e", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+              </div>
+              <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:20 }}>Print PDF Report</h2>
+            </div>
+            <p style={{ color:"#555", fontSize:13, marginBottom:20 }}>Select a person to generate their full account statement.</p>
+            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+              {people.map((p,i)=>{
+                const s = perPersonStats.find(x=>x.name===p);
+                const dc = entries.filter(e=>e.name===p).reduce((t,e)=>t+(e.docs?.length||0),0);
+                return (
+                  <div key={p} className="pdf-card" onClick={()=>{generatePDF(p,entries,people);setShowPdfModal(false);}}>
+                    <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                      <div style={{ width:36, height:36, borderRadius:"50%", background:AVATAR_COLORS[i%AVATAR_COLORS.length], display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:14, color:"#fff" }}>{p[0]}</div>
+                      <div>
+                        <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:15 }}>Account of {p}</div>
+                        <div style={{ fontSize:12, color:"#555", marginTop:2 }}>{entries.filter(e=>e.name===p).length} transactions{dc>0&&<span style={{color:"#a5b4fc",marginLeft:6}}>· 📎{dc}</span>}</div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontSize:11, color:"#555", marginBottom:2 }}>Balance</div>
+                      <div className={s.balance>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:15 }}>{fmt(s.balance)}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <button className="btn-ghost" style={{ width:"100%", marginTop:18, padding:"10px" }} onClick={()=>setShowPdfModal(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── ADD PERSON MODAL ── */}
+      {showAddPerson&&(
+        <div className="modal-overlay" onClick={()=>setShowAddPerson(false)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:20, marginBottom:6 }}>Add Person</h2>
+            <p style={{ color:"#555", fontSize:13, marginBottom:20 }}>New name will appear in account list.</p>
+            <input className={`input-field ${newPersonError?"error":""}`} placeholder="e.g. JOHN" value={newPersonName}
+              onChange={e=>{setNewPersonName(e.target.value.toUpperCase());setNewPersonError("");}}
+              onKeyDown={e=>{if(e.key==="Enter")handleAddPerson();}} autoFocus/>
+            {newPersonError&&<p style={{ color:"#f87171", fontSize:12, marginTop:6 }}>{newPersonError}</p>}
+            <div style={{ marginTop:16 }}>
+              <p style={{ fontSize:11, color:"#555", letterSpacing:".06em", textTransform:"uppercase", marginBottom:10 }}>Current</p>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+                {people.map((p,i)=>(
+                  <div key={p} style={{ display:"flex", alignItems:"center", gap:6, background:"#1e1e26", border:"1px solid #2e2e3a", borderRadius:20, padding:"4px 10px" }}>
+                    <div style={{ width:16, height:16, borderRadius:"50%", background:AVATAR_COLORS[i%AVATAR_COLORS.length], display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, color:"#fff", fontWeight:800 }}>{p[0]}</div>
+                    <span style={{ fontSize:12, color:"#bbb" }}>{p}</span>
+                    {!DEFAULT_PEOPLE.includes(p)&&<span onClick={()=>setPeople(prev=>prev.filter(x=>x!==p))} style={{ fontSize:14, color:"#555", cursor:"pointer", lineHeight:1 }}>×</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:10, marginTop:22 }}>
+              <button className="btn-primary" style={{ flex:1 }} onClick={handleAddPerson}>Add</button>
+              <button className="btn-ghost" onClick={()=>{setShowAddPerson(false);setNewPersonName("");setNewPersonError("");}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {submitted&&<div className="toast">✓ Entry saved successfully</div>}
+    </div>
+  );
+}
+
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
