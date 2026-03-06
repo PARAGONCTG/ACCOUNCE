@@ -40,6 +40,13 @@
     const { useState, useMemo, useRef, useEffect } = React;
 
 const TYPES = ["Bill", "Payment"];
+const CURRENCIES = [
+  { code:"USD", symbol:"$",  label:"US Dollar" },
+  { code:"CNY", symbol:"¥",  label:"Chinese RMB" },
+  { code:"BDT", symbol:"৳",  label:"Bangladeshi Taka" },
+  { code:"EUR", symbol:"€",  label:"Euro" },
+];
+const getCurrency = (code) => CURRENCIES.find(c => c.code === code) || CURRENCIES[0];
 const DEFAULT_PEOPLE = [];
 const DEFAULT_ENTRY_BY = [];
 
@@ -60,21 +67,63 @@ const initialData = [
 ];
 
 const fmt = (v) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
+const fmtC = (v, code="USD") => {
+  try { return new Intl.NumberFormat("en-US", { style:"currency", currency: code }).format(v); }
+  catch { const cur = getCurrency(code); return cur.symbol + Number(v).toFixed(2); }
+};
 const AVATAR_COLORS = ["#5b5bf6","#f59e0b","#10b981","#ef4444","#8b5cf6","#06b6d4","#f43f5e"];
 const EB_COLORS    = ["#a78bfa","#fb923c","#34d399","#f472b6","#60a5fa","#facc15","#e879f9"];
 
 // ── PDF GENERATOR ─────────────────────────────────────────────────────────────
 function generatePDF(person, entries, people) {
-  const pe      = entries.filter(e => e.name === person);
-  const bills   = pe.filter(e => e.type === "Bill").reduce((s, e) => s + e.amount, 0);
-  const payments= pe.filter(e => e.type === "Payment").reduce((s, e) => s + e.amount, 0);
-  const balance = payments - bills;
-  const color   = AVATAR_COLORS[people.indexOf(person) % AVATAR_COLORS.length];
-  const today   = new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" });
+  const pe    = entries.filter(e => e.name === person);
+  const color = AVATAR_COLORS[people.indexOf(person) % AVATAR_COLORS.length];
+  const today = new Date().toLocaleDateString("en-US", { year:"numeric", month:"long", day:"numeric" });
 
-  let running = 0;
+  // Group by currency
+  const cMap = {};
+  pe.forEach(e => {
+    const c = e.currency || "USD";
+    if (!cMap[c]) cMap[c] = { bills:0, payments:0 };
+    if (e.type === "Bill") cMap[c].bills += e.amount;
+    else cMap[c].payments += e.amount;
+  });
+  const currencies = Object.keys(cMap);
+
+  // Summary cards — single 3-card row, all currencies listed inside each card
+  const overallBal = currencies.reduce((s,c) => s + (cMap[c].payments - cMap[c].bills), 0);
+  const summaryCards = `
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px">
+      <div style="font-size:10px;color:#9ca3af;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px">Total Bills</div>
+      ${currencies.map(code => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+        <span style="font-size:9px;font-weight:700;color:#6366f1;background:#f5f3ff;border:1px solid #e0e7ff;padding:1px 6px;border-radius:3px;min-width:30px;text-align:center">${code}</span>
+        <span style="font-size:15px;font-weight:800;color:#dc2626">${fmtC(cMap[code].bills,code)}</span>
+      </div>`).join("")}
+    </div>
+    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px">
+      <div style="font-size:10px;color:#9ca3af;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px">Total Payments</div>
+      ${currencies.map(code => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+        <span style="font-size:9px;font-weight:700;color:#6366f1;background:#f5f3ff;border:1px solid #e0e7ff;padding:1px 6px;border-radius:3px;min-width:30px;text-align:center">${code}</span>
+        <span style="font-size:15px;font-weight:800;color:#16a34a">${fmtC(cMap[code].payments,code)}</span>
+      </div>`).join("")}
+    </div>
+    <div style="border:2px solid #e5e7eb;border-radius:10px;padding:16px 18px">
+      <div style="font-size:10px;color:#9ca3af;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px">Balance</div>
+      ${currencies.map(code => { const bal=cMap[code].payments-cMap[code].bills; return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+        <span style="font-size:9px;font-weight:700;color:#6366f1;background:#f5f3ff;border:1px solid #e0e7ff;padding:1px 6px;border-radius:3px;min-width:30px;text-align:center">${code}</span>
+        <span style="font-size:15px;font-weight:800;color:${bal>=0?"#16a34a":"#dc2626"}">${fmtC(bal,code)}</span>
+      </div>`; }).join("")}
+    </div>
+  </div>`;
+
+  // Transaction rows — running balance per currency
+  const runningMap = {};
   const rows = pe.map((e, i) => {
-    running += e.type === "Payment" ? e.amount : -e.amount;
+    const code = e.currency || "USD";
+    if (!runningMap[code]) runningMap[code] = 0;
+    runningMap[code] += e.type === "Payment" ? e.amount : -e.amount;
+    const running   = runningMap[code];
     const balColor  = running >= 0 ? "#16a34a" : "#dc2626";
     const typeColor = e.type === "Bill" ? "#dc2626" : "#16a34a";
     const bg        = i % 2 === 0 ? "#ffffff" : "#f8f9ff";
@@ -82,14 +131,33 @@ function generatePDF(person, entries, people) {
       ? e.docs.map(d => `<span style="font-size:10px;background:#f1f5f9;border:1px solid #e2e8f0;padding:2px 6px;border-radius:4px;color:#64748b">📎 ${d.name}</span>`).join(" ")
       : '<span style="color:#d1d5db;font-size:11px">—</span>';
     return `<tr style="background:${bg}">
-      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:11px;font-family:monospace;color:#6366f1;background:#f5f3ff;font-weight:600">${e.txnId || "#" + (i+1)}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:11px;font-family:monospace;color:#6366f1;background:#f5f3ff;font-weight:600">${e.txnId || "#"+(i+1)}</td>
       <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:11px;color:#6b7280">${e.createdAt ? new Date(e.createdAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "—"}</td>
       <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb"><span style="background:${e.type==="Bill"?"#fef2f2":"#f0fdf4"};color:${typeColor};border:1px solid ${e.type==="Bill"?"#fca5a5":"#86efac"};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">${e.type.toUpperCase()}</span></td>
       <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#374151">${e.source || "—"}</td>
       <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:12px;color:#6b7280">${e.entryBy || "—"}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:700;color:#111827;text-align:right">${fmt(e.amount)}</td>
-      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:700;color:${balColor};text-align:right">${fmt(running)}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:11px;font-weight:700;color:#6366f1;text-align:center">
+        <span style="background:#f5f3ff;border:1px solid #e0e7ff;padding:1px 6px;border-radius:3px;font-size:10px">${code}</span>
+      </td>
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:700;color:#111827;text-align:right">${fmtC(e.amount,code)}</td>
+      <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:700;color:${balColor};text-align:right">${fmtC(running,code)}</td>
       <td style="padding:9px 12px;border-bottom:1px solid #e5e7eb;font-size:11px">${docsHtml}</td>
+    </tr>`;
+  }).join("");
+
+  // Footer totals per currency
+  const footerRows = currencies.map(code => {
+    const v = cMap[code];
+    const bal = v.payments - v.bills;
+    return `<tr style="background:#f9fafb">
+      <td colspan="4" style="padding:9px 12px;font-size:11px;font-weight:700;color:#374151;border-top:1px solid #e5e7eb">
+        <span style="background:#f5f3ff;border:1px solid #e0e7ff;color:#6366f1;padding:2px 8px;border-radius:4px;font-size:10px">${code}</span> TOTAL
+      </td>
+      <td style="border-top:1px solid #e5e7eb"></td>
+      <td style="padding:9px 12px;text-align:right;font-size:12px;font-weight:800;color:#dc2626;border-top:1px solid #e5e7eb">${fmtC(v.bills,code)}</td>
+      <td style="padding:9px 12px;text-align:right;font-size:12px;font-weight:800;color:#16a34a;border-top:1px solid #e5e7eb">${fmtC(v.payments,code)}</td>
+      <td style="padding:9px 12px;text-align:right;font-size:12px;font-weight:800;color:${bal>=0?"#16a34a":"#dc2626"};border-top:1px solid #e5e7eb">${fmtC(bal,code)}</td>
+      <td style="border-top:1px solid #e5e7eb"></td>
     </tr>`;
   }).join("");
 
@@ -109,12 +177,8 @@ function generatePDF(person, entries, people) {
       <div style="font-size:12px;color:rgba(255,255,255,.7)">Generated on ${today}</div>
     </div>
   </div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px">
-    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px"><div style="font-size:10px;color:#9ca3af;letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">Total Bills</div><div style="font-size:22px;font-weight:800;color:#dc2626">${fmt(bills)}</div></div>
-    <div style="border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px"><div style="font-size:10px;color:#9ca3af;letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">Total Payments</div><div style="font-size:22px;font-weight:800;color:#16a34a">${fmt(payments)}</div></div>
-    <div style="border:2px solid ${balance>=0?"#16a34a":"#dc2626"};border-radius:10px;padding:16px 18px;background:${balance>=0?"#f0fdf4":"#fef2f2"}"><div style="font-size:10px;color:#9ca3af;letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px">Balance</div><div style="font-size:22px;font-weight:800;color:${balance>=0?"#16a34a":"#dc2626"}">${fmt(balance)}</div></div>
-  </div>
-  <div style="border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:24px">
+  ${summaryCards}
+  <div style="border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:24px;margin-top:16px">
     <div style="background:#f9fafb;padding:12px 14px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between">
       <span style="font-size:13px;font-weight:700;color:#374151">Transaction History</span>
       <span style="font-size:11px;color:#9ca3af">${pe.length} records</span>
@@ -126,17 +190,13 @@ function generatePDF(person, entries, people) {
         <th style="padding:9px 12px;text-align:left;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Type</th>
         <th style="padding:9px 12px;text-align:left;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Details</th>
         <th style="padding:9px 12px;text-align:left;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Prepared By</th>
+        <th style="padding:9px 12px;text-align:center;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Currency</th>
         <th style="padding:9px 12px;text-align:right;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Amount</th>
         <th style="padding:9px 12px;text-align:right;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Balance</th>
         <th style="padding:9px 12px;text-align:left;font-size:10px;color:#6b7280;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Docs</th>
       </tr></thead>
       <tbody>${rows}</tbody>
-      <tfoot><tr style="background:#f9fafb">
-        <td colspan="4" style="padding:11px 12px;font-size:12px;font-weight:700;color:#374151;border-top:2px solid #e5e7eb">TOTAL</td>
-        <td style="padding:11px 12px;text-align:right;font-size:13px;font-weight:800;color:#111827;border-top:2px solid #e5e7eb">${fmt(bills+payments)}</td>
-        <td style="padding:11px 12px;text-align:right;font-size:13px;font-weight:800;color:${balance>=0?"#16a34a":"#dc2626"};border-top:2px solid #e5e7eb">${fmt(balance)}</td>
-        <td style="border-top:2px solid #e5e7eb"></td>
-      </tr></tfoot>
+      <tfoot>${footerRows}</tfoot>
     </table>
   </div>
   <div style="display:flex;justify-content:space-between;padding-top:14px;border-top:1px solid #e5e7eb">
@@ -323,6 +383,17 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
   const [sortDir, setSortDir] = useState(1);
   const [page, setPage] = useState(0);
 
+  // Group totals by currency
+  const currencyTotals = useMemo(() => {
+    const map = {};
+    entries.forEach(e => {
+      const c = e.currency || "USD";
+      if (!map[c]) map[c] = { bills:0, payments:0 };
+      if (e.type==="Bill") map[c].bills += e.amount;
+      else map[c].payments += e.amount;
+    });
+    return Object.entries(map).map(([code, v]) => ({ code, ...v, balance: v.payments - v.bills }));
+  }, [entries]);
   const totalBills    = entries.filter(e=>e.type==="Bill").reduce((s,e)=>s+e.amount,0);
   const totalPayments = entries.filter(e=>e.type==="Payment").reduce((s,e)=>s+e.amount,0);
   const totalBalance  = totalPayments - totalBills;
@@ -353,7 +424,7 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
   return (
     <div>
       {/* Title */}
-      <div style={{marginBottom:22, display:"flex", justifyContent:"space-between", alignItems:"flex-end"}}>
+      <div className="dash-header" style={{marginBottom:22, display:"flex", justifyContent:"space-between", alignItems:"flex-end"}}>
         <div>
           <h1 style={{fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:28, letterSpacing:"-.03em", marginBottom:4}}>Account Overview</h1>
           <p style={{color:"#555", fontSize:13}}>{people.length} accounts · {entries.length} transactions</p>
@@ -363,41 +434,65 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
         </button>
       </div>
 
-      {/* Global summary cards */}
+      {/* Global summary cards — single row, all currencies */}
       <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14, marginBottom:24}}>
         {[
-          {label:"Total Bills",    value:totalBills,    cls:"balance-neg", icon:"📤"},
-          {label:"Total Payments", value:totalPayments, cls:"balance-pos", icon:"📥"},
-          {label:"Overall Balance",value:totalBalance,  cls:totalBalance>=0?"balance-pos":"balance-neg", icon:"⚖️"},
+          {label:"Total Bills",    icon:"📤", cls:"balance-neg", key:"bills"},
+          {label:"Total Payments", icon:"📥", cls:"balance-pos", key:"payments"},
+          {label:"Overall Balance",icon:"⚖️", key:"balance"},
         ].map(s=>(
           <div key={s.label} className="stat-card">
-            <div style={{fontSize:18, marginBottom:6}}>{s.icon}</div>
-            <div style={{color:"#555", fontSize:11, marginBottom:4, letterSpacing:".06em", textTransform:"uppercase"}}>{s.label}</div>
-            <div className={s.cls} style={{fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22}}>{fmt(s.value)}</div>
+            <div style={{fontSize:18,marginBottom:6}}>{s.icon}</div>
+            <div style={{color:"#555",fontSize:11,marginBottom:8,letterSpacing:".06em",textTransform:"uppercase"}}>{s.label}</div>
+            {currencyTotals.length === 0 ? (
+              <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:22,color:"#333"}}>—</div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                {currencyTotals.map(ct => {
+                  const val = ct[s.key];
+                  const cls = s.key==="balance" ? (val>=0?"balance-pos":"balance-neg") : s.cls;
+                  return (
+                    <div key={ct.code} style={{display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:9,color:"#5b5bf6",background:"#1e1e3a",border:"1px solid #3a3a5e",padding:"2px 6px",borderRadius:3,fontWeight:600,minWidth:32,textAlign:"center"}}>{ct.code}</span>
+                      <span className={cls} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:16,whiteSpace:"nowrap"}}>{fmtC(val,ct.code)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ))}
       </div>
 
       {/* Accounts table */}
-      <div className="card" style={{padding:0, overflow:"hidden", marginBottom:24}}>
+      <div className="card accounts-table-wrap" style={{padding:0, overflow:"hidden", marginBottom:24}}>
         {/* Table toolbar */}
         <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 18px", borderBottom:"1px solid #2a2a32", gap:12, flexWrap:"wrap"}}>
           <span style={{fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:15}}>All Accounts</span>
-          <div style={{display:"flex", alignItems:"center", gap:10, flex:1, justifyContent:"flex-end"}}>
+          <div style={{display:"flex", alignItems:"center", gap:8, flex:1, justifyContent:"flex-end", flexWrap:"wrap"}}>
             {/* Search */}
-            <div style={{position:"relative", maxWidth:240, flex:1}}>
+            <div style={{position:"relative", maxWidth:240, flex:1, minWidth:140}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)"}}>
                 <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
               <input value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} placeholder="Search accounts…"
                 style={{width:"100%",background:"#1e1e26",border:"1px solid #2e2e3a",borderRadius:7,padding:"8px 12px 8px 32px",color:"#e8e6e1",fontSize:12,fontFamily:"'DM Mono',monospace",outline:"none"}}/>
             </div>
+            {/* Clear search */}
+            {search && (
+              <button
+                onClick={()=>{setSearch("");setPage(0);}}
+                style={{background:"#2d1a1a",border:"1px solid #5c2020",color:"#f87171",fontFamily:"'DM Mono',monospace",fontSize:11,padding:"6px 12px",borderRadius:6,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}
+              >
+                ✕ Clear
+              </button>
+            )}
             <span style={{fontSize:12,color:"#555",whiteSpace:"nowrap"}}>{filtered.length} of {people.length}</span>
           </div>
         </div>
 
         {/* Column headers */}
-        <div style={{display:"grid", gridTemplateColumns:"1fr 120px 120px 130px 90px", padding:"10px 18px", background:"#12121a", borderBottom:"1px solid #2a2a32"}}>
+        <div style={{display:"grid", gridTemplateColumns:"1fr 200px 200px 260px 90px", padding:"10px 18px", background:"#12121a", borderBottom:"1px solid #2a2a32"}}>
           {[
             {key:"name",     label:"ACCOUNT"},
             {key:"bills",    label:"BILLS"},
@@ -420,7 +515,7 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
           const color = AVATAR_COLORS[people.indexOf(p.name) % AVATAR_COLORS.length];
           const txCount = entries.filter(e=>e.name===p.name).length;
           return (
-            <div key={p.name} className="sheet-row" style={{display:"grid", gridTemplateColumns:"1fr 120px 120px 130px 90px", padding:"12px 18px", borderBottom:i<paged.length-1?"1px solid #1e1e26":"none", alignItems:"center"}}>
+            <div key={p.name} className="sheet-row" style={{display:"grid", gridTemplateColumns:"1fr 200px 200px 260px 90px", padding:"12px 18px", borderBottom:i<paged.length-1?"1px solid #1e1e26":"none", alignItems:"center"}}>
               {/* Account */}
               <div style={{display:"flex", alignItems:"center", gap:11}}>
                 <div style={{width:34,height:34,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:13,color:"#fff",flexShrink:0}}>{p.name[0]}</div>
@@ -431,16 +526,47 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
               </div>
               {/* Bills */}
               <div style={{textAlign:"right"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#f87171"}}>{fmt(p.bills)}</div>
+                {p.currencies && Object.keys(p.currencies).length > 0 ? (
+                  Object.entries(p.currencies).map(([code, v]) => (
+                    <div key={code} style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4,marginBottom:2}}>
+                      <span style={{fontSize:9,color:"#555",whiteSpace:"nowrap"}}>{code}</span>
+                      <span style={{fontSize:12,fontWeight:700,color:"#f87171",whiteSpace:"nowrap"}}>{fmtC(v.bills,code)}</span>
+                    </div>
+                  ))
+                ) : <div style={{fontSize:13,fontWeight:700,color:"#f87171"}}>$0.00</div>}
               </div>
               {/* Payments */}
               <div style={{textAlign:"right"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#4ade80"}}>{fmt(p.payments)}</div>
+                {p.currencies && Object.keys(p.currencies).length > 0 ? (
+                  Object.entries(p.currencies).map(([code, v]) => (
+                    <div key={code} style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4,marginBottom:2}}>
+                      <span style={{fontSize:9,color:"#555",whiteSpace:"nowrap"}}>{code}</span>
+                      <span style={{fontSize:12,fontWeight:700,color:"#4ade80",whiteSpace:"nowrap"}}>{fmtC(v.payments,code)}</span>
+                    </div>
+                  ))
+                ) : <div style={{fontSize:13,fontWeight:700,color:"#4ade80"}}>$0.00</div>}
               </div>
               {/* Balance */}
               <div style={{textAlign:"right"}}>
-                <div className={p.balance>=0?"balance-pos":"balance-neg"} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14}}>{fmt(p.balance)}</div>
-                <div style={{fontSize:10,color:"#555",marginTop:1}}>{p.balance>=0?"in credit":"outstanding"}</div>
+                {p.currencies && Object.keys(p.currencies).length > 0 ? (
+                  Object.entries(p.currencies).map(([code, v]) => {
+                    const bal = v.payments - v.bills;
+                    return (
+                      <div key={code} style={{marginBottom:3}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4}}>
+                          <span style={{fontSize:9,color:"#5b5bf6",background:"#1e1e3a",border:"1px solid #3a3a5e",padding:"1px 5px",borderRadius:3,whiteSpace:"nowrap"}}>{code}</span>
+                          <span className={bal>=0?"balance-pos":"balance-neg"} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:13,whiteSpace:"nowrap"}}>{fmtC(bal,code)}</span>
+                        </div>
+                        <div style={{fontSize:10,color:"#555",textAlign:"right"}}>{bal>=0?"in credit":"outstanding"}</div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div>
+                    <div className="balance-pos" style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14}}>$0.00</div>
+                    <div style={{fontSize:10,color:"#555"}}>in credit</div>
+                  </div>
+                )}
               </div>
               {/* PDF */}
               <div style={{textAlign:"right"}}>
@@ -454,12 +580,40 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
 
         {/* Totals footer */}
         {filtered.length > 0 && (
-          <div style={{display:"grid", gridTemplateColumns:"1fr 120px 120px 130px 90px", padding:"12px 18px", borderTop:"1px solid #2a2a32", background:"#12121a"}}>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 200px 200px 260px 90px", padding:"12px 18px", borderTop:"1px solid #2a2a32", background:"#12121a"}}>
             <span style={{fontSize:11,color:"#555",fontWeight:600}}>TOTAL ({filtered.length} accounts)</span>
-            <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#f87171"}}>{fmt(filtered.reduce((s,p)=>s+p.bills,0))}</div>
-            <div style={{textAlign:"right",fontSize:12,fontWeight:700,color:"#4ade80"}}>{fmt(filtered.reduce((s,p)=>s+p.payments,0))}</div>
             <div style={{textAlign:"right"}}>
-              <span className={filtered.reduce((s,p)=>s+p.balance,0)>=0?"balance-pos":"balance-neg"} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:13}}>{fmt(filtered.reduce((s,p)=>s+p.balance,0))}</span>
+              {Object.entries(filtered.reduce((acc,p)=>{
+                if(p.currencies) Object.entries(p.currencies).forEach(([code,v])=>{
+                  if(!acc[code]) acc[code]={bills:0};
+                  acc[code].bills += v.bills;
+                });
+                return acc;
+              },{})).map(([code,v])=>(
+                <div key={code} style={{fontSize:11,fontWeight:700,color:"#f87171",whiteSpace:"nowrap"}}>{code} {fmtC(v.bills,code)}</div>
+              ))}
+            </div>
+            <div style={{textAlign:"right"}}>
+              {Object.entries(filtered.reduce((acc,p)=>{
+                if(p.currencies) Object.entries(p.currencies).forEach(([code,v])=>{
+                  if(!acc[code]) acc[code]={payments:0};
+                  acc[code].payments += v.payments;
+                });
+                return acc;
+              },{})).map(([code,v])=>(
+                <div key={code} style={{fontSize:11,fontWeight:700,color:"#4ade80",whiteSpace:"nowrap"}}>{code} {fmtC(v.payments,code)}</div>
+              ))}
+            </div>
+            <div style={{textAlign:"right"}}>
+              {Object.entries(filtered.reduce((acc,p)=>{
+                if(p.currencies) Object.entries(p.currencies).forEach(([code,v])=>{
+                  if(!acc[code]) acc[code]=0;
+                  acc[code] += v.payments - v.bills;
+                });
+                return acc;
+              },{})).map(([code,bal])=>(
+                <div key={code} className={bal>=0?"balance-pos":"balance-neg"} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:12,whiteSpace:"nowrap"}}>{code} {fmtC(bal,code)}</div>
+              ))}
             </div>
             <span/>
           </div>
@@ -482,8 +636,7 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
         )}
       </div>
 
-      {/* ── ACCOUNT DETAIL VIEWER ── */}
-      <AccountDetail entries={entries} people={people} avatarColor={avatarColor} fmt={fmt} ebColor={ebColor} onPDF={onPDF} />
+
     </div>
   );
 }
@@ -491,198 +644,181 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
 // ── ACCOUNT DETAIL COMPONENT ──────────────────────────────────────────────────
 function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
   const [selected, setSelected] = useState(null);
-  const [typeQuery, setTypeQuery] = useState("");
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [acctSearch, setAcctSearch] = useState("");
-  const selectorRef = useRef();
+  const [acctFilter, setAcctFilter] = useState("");
 
-  // close suggestions on outside click
-  const handleOutside = (e) => { if (selectorRef.current && !selectorRef.current.contains(e.target)) setShowSuggestions(false); };
-  useState(() => { document.addEventListener("mousedown", handleOutside); return () => document.removeEventListener("mousedown", handleOutside); });
-
-  const suggestions = typeQuery.trim()
-    ? people.filter(p => p.toLowerCase().includes(typeQuery.trim().toLowerCase()))
+  const filteredPeople = acctFilter.trim()
+    ? people.filter(p => p.toLowerCase().includes(acctFilter.trim().toLowerCase()))
     : people;
 
-  const acctEntries = selected
-    ? entries.filter(e => {
-        if (e.name !== selected) return false;
-        if (!acctSearch.trim()) return true;
-        const q = acctSearch.trim().toLowerCase();
-        return (
-          (e.txnId && e.txnId.toLowerCase().includes(q)) ||
-          (e.source && e.source.toLowerCase().includes(q)) ||
-          (e.entryBy && e.entryBy.toLowerCase().includes(q)) ||
-          e.type.toLowerCase().includes(q) ||
-          String(e.amount).includes(q)
-        );
-      })
-    : [];
-  const bills    = acctEntries.filter(e => e.type === "Bill").reduce((s, e) => s + e.amount, 0);
-  const payments = acctEntries.filter(e => e.type === "Payment").reduce((s, e) => s + e.amount, 0);
-  const balance  = payments - bills;
-  const color    = selected ? avatarColor(selected) : "#5b5bf6";
+  if (!selected) {
+    return (
+      <div>
+        <div style={{ marginBottom:20, display:"flex", justifyContent:"space-between", alignItems:"flex-end", flexWrap:"wrap", gap:12 }}>
+          <div>
+            <h1 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:28, letterSpacing:"-.02em", marginBottom:4 }}>Accounts</h1>
+            <p style={{ color:"#555", fontSize:13 }}>{filteredPeople.length} of {people.length} accounts</p>
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ position:"relative" }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input value={acctFilter} onChange={e=>setAcctFilter(e.target.value)}
+                placeholder="Search accounts…"
+                style={{ background:"#1e1e26", border:"1px solid #2e2e3a", borderRadius:8, padding:"9px 32px 9px 32px", color:"#e8e6e1", fontSize:13, fontFamily:"'DM Mono',monospace", outline:"none", width:220 }}
+                onFocus={e=>e.target.style.borderColor="#5b5bf6"}
+                onBlur={e=>e.target.style.borderColor="#2e2e3a"}/>
+              {acctFilter && <button onClick={()=>setAcctFilter("")} style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:18, padding:0 }}>×</button>}
+            </div>
+            {acctFilter && (
+              <button onClick={()=>setAcctFilter("")}
+                style={{ background:"#2d1a1a", border:"1px solid #5c2020", color:"#f87171", fontFamily:"'DM Mono',monospace", fontSize:12, padding:"8px 14px", borderRadius:8, cursor:"pointer" }}>
+                ✕ Clear
+              </button>
+            )}
+          </div>
+        </div>
+        {people.length === 0 ? (
+          <div style={{ textAlign:"center", padding:"60px 20px", color:"#555" }}>
+            <div style={{ fontSize:40, marginBottom:12 }}>👤</div>
+            <p>No accounts yet. Add accounts from Home tab.</p>
+          </div>
+        ) : (
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:14 }}>
+            {filteredPeople.length === 0 ? (
+              <div style={{ gridColumn:"1/-1", textAlign:"center", padding:"40px", color:"#555" }}>No accounts match "{acctFilter}"</div>
+            ) : filteredPeople.map(p => {
+              const c = avatarColor(p);
+              const txns = entries.filter(e => e.name === p);
+              const cMap = {};
+              txns.forEach(e => {
+                const cur = e.currency||"USD";
+                if (!cMap[cur]) cMap[cur] = {bills:0,payments:0};
+                if (e.type==="Bill") cMap[cur].bills += e.amount;
+                else cMap[cur].payments += e.amount;
+              });
+              return (
+                <div key={p}
+                  onClick={() => { setSelected(p); setAcctSearch(""); }}
+                  className="stat-card"
+                  style={{ cursor:"pointer", padding:20, position:"relative", overflow:"hidden", transition:"all .2s" }}
+                  onMouseEnter={e=>{ e.currentTarget.style.borderColor=c+"88"; e.currentTarget.style.transform="translateY(-2px)"; }}
+                  onMouseLeave={e=>{ e.currentTarget.style.borderColor="#2a2a32"; e.currentTarget.style.transform="none"; }}>
+                  <div style={{ position:"absolute", top:0, left:0, right:0, height:3, background:c, borderRadius:"12px 12px 0 0" }}/>
+                  <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:14 }}>
+                    <div style={{ width:40, height:40, borderRadius:"50%", background:c, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:800, color:"#fff", flexShrink:0 }}>{p[0]}</div>
+                    <div>
+                      <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:14, color:c }}>{p}</div>
+                      <div style={{ fontSize:11, color:"#555", marginTop:2 }}>{txns.length} transaction{txns.length!==1?"s":""}</div>
+                    </div>
+                  </div>
+                  {Object.keys(cMap).length === 0 ? (
+                    <div style={{ fontSize:12, color:"#333" }}>No transactions yet</div>
+                  ) : (
+                    Object.entries(cMap).map(([code, v]) => {
+                      const bal = v.payments - v.bills;
+                      return (
+                        <div key={code} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:4 }}>
+                          <span style={{ fontSize:9, color:"#5b5bf6", background:"#1e1e3a", border:"1px solid #3a3a5e", padding:"1px 5px", borderRadius:3 }}>{code}</span>
+                          <span className={bal>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13 }}>{fmtC(bal,code)}</span>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div style={{ marginTop:12, fontSize:10, color:"#444", textAlign:"right" }}>View details →</div>
+                </div>
+              );
+            }))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
-  let running = 0;
+  // ── DETAIL VIEW (account selected) ───────────────────────────────────────
+  const runningByCurrency = {};
 
   return (
     <div className="card" style={{ padding:0, overflow:"hidden" }}>
-      {/* Header with account selector */}
-      <div style={{ padding:"18px 20px", borderBottom:"1px solid #2a2a32", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:12 }}>
-        <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:16 }}>Account Detail View</span>
+      {/* Back bar */}
+      <div style={{ padding:"14px 20px", borderBottom:"1px solid #2a2a32", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          {/* Type-to-search account selector */}
-          <div ref={selectorRef} style={{ position:"relative" }}>
-            <div style={{ display:"flex", alignItems:"center", gap:8, background:"#1e1e26", border:`1px solid ${selected ? color+"88" : "#2e2e3a"}`, borderRadius:8, padding:"8px 12px", minWidth:240, transition:"border .2s" }}>
-              {/* Avatar dot when selected */}
-              {selected && (
-                <div style={{ width:22, height:22, borderRadius:"50%", background:color, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:800, color:"#fff", flexShrink:0 }}>{selected[0]}</div>
-              )}
-              {!selected && (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{flexShrink:0}}>
-                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-                </svg>
-              )}
-              <input
-                value={selected && !showSuggestions ? selected : typeQuery}
-                onChange={e => { setTypeQuery(e.target.value); setSelected(null); setShowSuggestions(true); setAcctSearch(""); }}
-                onFocus={() => { setShowSuggestions(true); if (selected) setTypeQuery(""); }}
-                placeholder="Type account name…"
-                style={{ background:"none", border:"none", outline:"none", fontSize:13, color:"#e8e6e1", fontFamily:"'DM Mono',monospace", flex:1, minWidth:0 }}
-              />
-              {(typeQuery || selected) && (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2"
-                  style={{ flexShrink:0, transform: showSuggestions?"rotate(180deg)":"none", transition:"transform .2s" }}>
-                  <polyline points="6,9 12,15 18,9"/>
-                </svg>
-              )}
-            </div>
-            {/* Suggestions list */}
-            {showSuggestions && (
-              <div style={{ position:"absolute", top:"calc(100% + 4px)", left:0, right:0, background:"#1e1e26", border:"1px solid #2e2e3a", borderRadius:10, zIndex:100, boxShadow:"0 8px 28px rgba(0,0,0,.7)", maxHeight:280, overflowY:"auto" }}>
-                {suggestions.length === 0 && (
-                  <div style={{ padding:"14px 16px", color:"#555", fontSize:12 }}>No accounts match "{typeQuery}"</div>
-                )}
-                {suggestions.map((p, i) => {
-                  const c = AVATAR_COLORS[people.indexOf(p) % AVATAR_COLORS.length];
-                  const cnt = entries.filter(e => e.name === p).length;
-                  // highlight matching part
-                  const q = typeQuery.trim().toLowerCase();
-                  const idx = p.toLowerCase().indexOf(q);
-                  const before = idx >= 0 ? p.slice(0, idx) : p;
-                  const match  = idx >= 0 ? p.slice(idx, idx + q.length) : "";
-                  const after  = idx >= 0 ? p.slice(idx + q.length) : "";
-                  return (
-                    <div key={p}
-                      onClick={() => { setSelected(p); setTypeQuery(""); setShowSuggestions(false); setAcctSearch(""); }}
-                      style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", cursor:"pointer",
-                        background: selected===p ? "#16162e" : "transparent",
-                        borderLeft:`3px solid ${selected===p ? c : "transparent"}` }}
-                      onMouseEnter={e=>e.currentTarget.style.background="#1a1a2e"}
-                      onMouseLeave={e=>e.currentTarget.style.background=selected===p?"#16162e":"transparent"}>
-                      <div style={{ width:28, height:28, borderRadius:"50%", background:c, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800, color:"#fff", flexShrink:0 }}>{p[0]}</div>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontSize:13, fontWeight:600, color:"#e8e6e1" }}>
-                          {before}<span style={{ color:"#5b5bf6", background:"#5b5bf620" }}>{match}</span>{after}
-                        </div>
-                        <div style={{ fontSize:10, color:"#555", marginTop:1 }}>{cnt} transaction{cnt!==1?"s":""}</div>
-                      </div>
-                      {selected===p && <span style={{ color:"#5b5bf6" }}>✓</span>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          <button onClick={() => { setSelected(null); setAcctSearch(""); }}
+            style={{ background:"#1e1e26", border:"1px solid #2e2e3a", color:"#888", fontFamily:"'DM Mono',monospace", fontSize:12, padding:"7px 12px", borderRadius:7, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}
+            onMouseEnter={e=>e.currentTarget.style.borderColor="#5b5bf6"}
+            onMouseLeave={e=>e.currentTarget.style.borderColor="#2e2e3a"}>
+            ← Back
+          </button>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ width:28, height:28, borderRadius:"50%", background:color, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:800, color:"#fff" }}>{selected[0]}</div>
+            <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:15 }}>{selected}</span>
           </div>
-          {selected && (
-            <button className="btn-pdf" onClick={() => onPDF(selected)}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
-              PDF
-            </button>
-          )}
-          {selected && (
-            <button onClick={() => { setSelected(null); setAcctSearch(""); }}
-              style={{ background:"#2d1a1a", border:"1px solid #5c2020", color:"#f87171", fontFamily:"'DM Mono',monospace", fontSize:12, padding:"8px 14px", borderRadius:8, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              Clear
-            </button>
-          )}
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <div style={{ position:"relative" }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)" }}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input value={acctSearch} onChange={e=>setAcctSearch(e.target.value)}
+              placeholder="Search transactions…"
+              style={{ background:"#1e1e26", border:"1px solid #2e2e3a", borderRadius:7, padding:"8px 32px 8px 30px", color:"#e8e6e1", fontSize:12, fontFamily:"'DM Mono',monospace", outline:"none", width:220 }}
+              onFocus={e=>e.target.style.borderColor="#5b5bf6"}
+              onBlur={e=>e.target.style.borderColor="#2e2e3a"}/>
+            {acctSearch && <button onClick={()=>setAcctSearch("")} style={{ position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:16, padding:0 }}>×</button>}
+          </div>
+          <button className="btn-pdf" onClick={()=>onPDF(selected)}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+            PDF
+          </button>
         </div>
       </div>
 
-      {/* Search bar — shown when account is selected */}
-      {selected && (
-        <div style={{ padding:"12px 20px", borderBottom:"1px solid #2a2a32", background:"#13131a" }}>
-          <div style={{ position:"relative" }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2"
-              style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)" }}>
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            <input
-              value={acctSearch}
-              onChange={e => setAcctSearch(e.target.value)}
-              placeholder="Search by Sub ID, type, details, amount, prepared by…"
-              style={{ width:"100%", background:"#1e1e26", border:"1px solid #2e2e3a", borderRadius:8, padding:"10px 36px 10px 36px", color:"#e8e6e1", fontSize:12, fontFamily:"'DM Mono',monospace", outline:"none", transition:"border .2s" }}
-              onFocus={e => e.target.style.borderColor="#5b5bf6"}
-              onBlur={e => e.target.style.borderColor="#2e2e3a"}
-            />
-            {acctSearch && (
-              <button onClick={() => setAcctSearch("")}
-                style={{ position:"absolute", right:10, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:18, lineHeight:1, padding:0 }}>×</button>
-            )}
-          </div>
-          {acctSearch && (
-            <p style={{ fontSize:11, color:"#555", marginTop:6 }}>
-              {acctEntries.length} result{acctEntries.length!==1?"s":""} for "{acctSearch}"
-            </p>
-          )}
-        </div>
-      )}
+      {/* Summary strip - per currency */}
+      {(() => {
+        const cMap = {};
+        acctEntries.forEach(e => {
+          const c = e.currency||"USD";
+          if (!cMap[c]) cMap[c] = {bills:0, payments:0};
+          if (e.type==="Bill") cMap[c].bills += e.amount;
+          else cMap[c].payments += e.amount;
+        });
+        return Object.entries(cMap).map(([code, v], ci) => {
+          const cBal = v.payments - v.bills;
+          return (
+            <div key={code} style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))", borderBottom:"1px solid #2a2a32", borderTop: ci>0?"1px solid #1e1e26":"none" }}>
+              {[
+                { label:"Bills",    value:v.bills,    color:"#f87171" },
+                { label:"Payments", value:v.payments, color:"#4ade80" },
+                { label:"Balance",  value:cBal,       color:cBal>=0?"#4ade80":"#f87171" },
+              ].map((s, i) => (
+                <div key={i} style={{ padding:"12px 20px", borderRight:i<2?"1px solid #2a2a32":"none", position:"relative" }}>
+                  {i===0 && <span style={{position:"absolute",top:8,left:8,fontSize:9,color:"#5b5bf6",background:"#1e1e3a",border:"1px solid #3a3a5e",padding:"1px 5px",borderRadius:3,fontWeight:600}}>{code}</span>}
+                  <div style={{ fontSize:10, color:"#555", letterSpacing:".07em", textTransform:"uppercase", marginBottom:3, marginTop: i===0?12:0 }}>{s.label}</div>
+                  <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:16, color:s.color }}>{fmtC(s.value, code)}</div>
+                </div>
+              ))}
+            </div>
+          );
+        });
+      })()}
 
-      {/* Empty state */}
-      {!selected && (
-        <div style={{ padding:"50px 20px", textAlign:"center" }}>
-          <div style={{ fontSize:36, marginBottom:12 }}>👤</div>
-          <p style={{ color:"#555", fontSize:13 }}>Select an account above to view all their transactions</p>
-        </div>
-      )}
-
-      {/* Account selected */}
-      {selected && (
-        <>
-          {/* Summary strip */}
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", borderBottom:"1px solid #2a2a32" }}>
-            {[
-              { label:"Total Bills",    value:bills,    color:"#f87171" },
-              { label:"Total Payments", value:payments, color:"#4ade80" },
-              { label:"Balance",        value:balance,  color:balance>=0?"#4ade80":"#f87171" },
-            ].map((s, i) => (
-              <div key={i} style={{ padding:"14px 20px", borderRight:i<2?"1px solid #2a2a32":"none" }}>
-                <div style={{ fontSize:10, color:"#555", letterSpacing:".07em", textTransform:"uppercase", marginBottom:4 }}>{s.label}</div>
-                <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:18, color:s.color }}>{fmt(s.value)}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Column headers */}
+      {/* Table */}
+      <div className="sheet-scroll" style={{ overflowX:"auto" }}>
+        <div style={{ minWidth:700 }}>
+          {/* Header */}
           <div style={{ display:"grid", gridTemplateColumns:"110px 130px 80px 130px 110px 110px 55px", padding:"10px 20px", background:"#12121a", borderBottom:"1px solid #2a2a32" }}>
             {["SUB. ID","DATE","TYPE","DETAILS","AMOUNT","BALANCE","DOCS"].map((h,i) => (
               <span key={i} style={{ fontSize:10, color: i===0?"#a5b4fc":i===1?"#f59e0b":"#555", letterSpacing:".08em", fontWeight:500 }}>{h}</span>
             ))}
           </div>
-
-          {/* Rows */}
           {acctEntries.length === 0 && (
             <div style={{ padding:"30px", textAlign:"center", color:"#555", fontSize:13 }}>No transactions for {selected} yet.</div>
           )}
           {acctEntries.map((e, i) => {
-            running += e.type === "Payment" ? e.amount : -e.amount;
-            const bal = running;
+            const cur = e.currency || "USD";
+            if (!runningByCurrency[cur]) runningByCurrency[cur] = 0;
+            runningByCurrency[cur] += e.type === "Payment" ? e.amount : -e.amount;
+            const bal = runningByCurrency[cur];
             return (
               <div key={e.id} className="sheet-row" style={{ display:"grid", gridTemplateColumns:"110px 130px 80px 130px 110px 110px 55px", padding:"11px 20px", borderBottom:i<acctEntries.length-1?"1px solid #1e1e26":"none", alignItems:"center" }}>
-                {/* Sub ID */}
                 <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:"#a5b4fc", background:"#1a1a2e", border:"1px solid #3a3a5e", padding:"3px 7px", borderRadius:5, display:"inline-block" }}>{e.txnId||"—"}</span>
-                {/* Date */}
                 <div>
                   {e.createdAt ? (
                     <>
@@ -691,17 +827,15 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
                     </>
                   ) : <span style={{color:"#333",fontSize:11}}>—</span>}
                 </div>
-                {/* Type */}
                 <span className={`tag tag-${e.type.toLowerCase()}`}>{e.type}</span>
-                {/* Details */}
                 <span style={{ fontSize:12, color:"#888", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.source || <span style={{color:"#333"}}>—</span>}</span>
-                {/* Amount */}
                 <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13, color:e.type==="Bill"?"#f87171":"#4ade80" }}>
-                  {e.type==="Bill"?"-":"+"}{fmt(e.amount)}
+                  {e.type==="Bill"?"-":"+"}{fmtC(e.amount, cur)}
                 </span>
-                {/* Running balance */}
-                <span className={bal>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13 }}>{fmt(bal)}</span>
-                {/* Docs */}
+                <div>
+                  <span className={bal>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13 }}>{fmtC(bal, cur)}</span>
+                  {cur !== "USD" && <span style={{ marginLeft:4, fontSize:9, color:"#5b5bf6", background:"#1e1e3a", border:"1px solid #3a3a5e", padding:"1px 4px", borderRadius:3 }}>{cur}</span>}
+                </div>
                 <div>
                   {e.docs&&e.docs.length>0
                     ? <span className="doc-badge">📎 {e.docs.length}</span>
@@ -710,8 +844,6 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
               </div>
             );
           })}
-
-          {/* Footer */}
           {acctEntries.length > 0 && (
             <div style={{ display:"grid", gridTemplateColumns:"110px 130px 80px 130px 110px 110px 55px", padding:"12px 20px", borderTop:"1px solid #2a2a32", background:"#12121a" }}>
               <span/><span/><span/>
@@ -721,11 +853,12 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
               <span/>
             </div>
           )}
-        </>
-      )}
+        </div>
+      </div>
     </div>
   );
 }
+
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 function App() {
@@ -733,7 +866,7 @@ function App() {
   const [people, setPeople]           = useState(DEFAULT_PEOPLE);
   const [dbLoading, setDbLoading]      = useState(true);
   const [entryByList, setEntryByList] = useState(DEFAULT_ENTRY_BY);
-  const [form, setForm]               = useState({ name:"", type:"Bill", amount:"", source:"", entryBy:"", docs:[] });
+  const [form, setForm]               = useState({ name:"", type:"Bill", amount:"", source:"", entryBy:"", currency:"USD", docs:[] });
   const [errors, setErrors]           = useState({});
   const [submitted, setSubmitted]     = useState(false);
   const [editId, setEditId]           = useState(null);
@@ -744,6 +877,9 @@ function App() {
   const [filterName, setFilterName]   = useState("ALL");
   const [sheetSearch, setSheetSearch]  = useState("");
   const [showPdfModal, setShowPdfModal] = useState(false);
+  const [authUser, setAuthUser]         = useState(null); // null = not logged in
+  const [loginForm, setLoginForm]       = useState({ username:"", password:"" });
+  const [loginError, setLoginError]     = useState("");
 
 
   // ── FIREBASE SYNC ──────────────────────────────────────────────────────────
@@ -784,7 +920,15 @@ function App() {
   const perPersonStats = useMemo(() => people.map(p => {
     const bills    = entries.filter(e=>e.name===p&&e.type==="Bill").reduce((s,e)=>s+e.amount,0);
     const payments = entries.filter(e=>e.name===p&&e.type==="Payment").reduce((s,e)=>s+e.amount,0);
-    return { name:p, bills, payments, balance:payments-bills };
+    // currency breakdown
+    const currencies = {};
+    entries.filter(e=>e.name===p).forEach(e => {
+      const c = e.currency||"USD";
+      if (!currencies[c]) currencies[c] = {bills:0,payments:0};
+      if (e.type==="Bill") currencies[c].bills += e.amount;
+      else currencies[c].payments += e.amount;
+    });
+    return { name:p, bills, payments, balance:payments-bills, currencies };
   }), [entries, people]);
 
   const validate = () => {
@@ -798,7 +942,7 @@ function App() {
   const handleSubmit = () => {
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
-    const row = { name:form.name, type:form.type, amount:Number(form.amount), source:form.source.trim(), entryBy:form.entryBy, docs:form.docs };
+    const row = { name:form.name, type:form.type, amount:Number(form.amount), source:form.source.trim(), entryBy:form.entryBy, currency:form.currency||"USD", docs:form.docs };
     if (editId !== null) {
       // update in Firebase
       const entry = entries.find(e => e.id === editId);
@@ -819,14 +963,14 @@ function App() {
 
   const handleEdit = (entry) => {
     setEditId(entry.id);
-    setForm({ name:entry.name, type:entry.type, amount:String(entry.amount), source:entry.source||"", entryBy:entry.entryBy||"", docs:entry.docs||[] });
+    setForm({ name:entry.name, type:entry.type, amount:String(entry.amount), source:entry.source||"", entryBy:entry.entryBy||"", currency:entry.currency||"USD", docs:entry.docs||[] });
     setView("form");
   };
   const handleDelete = (id) => {
     const entry = entries.find(e => e.id === id);
     if (entry && entry._fireId) entriesCol().doc(entry._fireId).delete();
   };
-  const handleNew = () => { setEditId(null); setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", docs:[] }); setErrors({}); setView("form"); };
+  const handleNew = () => { setEditId(null); setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", currency:"USD", docs:[] }); setErrors({}); setView("form"); };
 
   const handleAddPerson = () => {
     const t = newPersonName.trim().toUpperCase();
@@ -834,6 +978,19 @@ function App() {
     if (people.includes(t)) { setNewPersonError("Already exists"); return; }
     setPeople(prev => [...prev, t]);
     setNewPersonName(""); setNewPersonError(""); setShowAddPerson(false);
+  };
+
+  const handleLogin = () => {
+    const u = loginForm.username.trim().toUpperCase();
+    const p = loginForm.password.trim();
+    if (u === "ADMIN") {
+      if (p === "azim@2026") { setAuthUser("ADMIN"); setLoginError(""); }
+      else setLoginError("Wrong password for ADMIN.");
+    } else if (u === "PARAGON") {
+      setAuthUser("PARAGON"); setLoginError("");
+    } else {
+      setLoginError("Unknown username. Use ADMIN or PARAGON.");
+    }
   };
 
   const avatarColor  = (name) => AVATAR_COLORS[people.indexOf(name) % AVATAR_COLORS.length];
@@ -857,6 +1014,81 @@ function App() {
       <div style={{ width:44, height:44, border:"3px solid #2a2a32", borderTop:"3px solid #5b5bf6", borderRadius:"50%", animation:"spin 0.8s linear infinite" }}></div>
       <div style={{ color:"#555", fontSize:13 }}>Connecting to database…</div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+
+  if (!authUser) return (
+    <div style={{ fontFamily:"'DM Mono',monospace", minHeight:"100vh", background:"#0f0f11", color:"#e8e6e1", display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap'); *{box-sizing:border-box;margin:0;padding:0} input{outline:none}`}</style>
+      <div style={{ width:"100%", maxWidth:400 }}>
+        {/* Logo */}
+        <div style={{ textAlign:"center", marginBottom:36 }}>
+          <div style={{ width:60, height:60, background:"#5b5bf6", borderRadius:16, display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 16px", boxShadow:"0 0 40px #5b5bf640" }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          </div>
+          <h1 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:30, letterSpacing:"-.03em", marginBottom:4 }}>Paragon</h1>
+          <p style={{ color:"#555", fontSize:13 }}>Account Management System</p>
+        </div>
+
+        {/* Card */}
+        <div style={{ background:"#16161b", border:"1px solid #2a2a32", borderRadius:16, padding:32 }}>
+          <p style={{ color:"#666", fontSize:12, marginBottom:20, textAlign:"center", letterSpacing:".04em" }}>SELECT YOUR ACCOUNT</p>
+
+          {/* Two user buttons */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom: loginForm.username==="ADMIN" ? 20 : 0 }}>
+            {/* PARAGON button */}
+            <button
+              onClick={()=>{ setLoginForm({username:"PARAGON",password:""}); setLoginError(""); setAuthUser("PARAGON"); }}
+              style={{ padding:"20px 12px", borderRadius:12, border:`2px solid ${loginForm.username==="PARAGON"?"#10b981":"#2e2e3a"}`, background: loginForm.username==="PARAGON"?"#0d2d1e":"#1e1e26", cursor:"pointer", transition:"all .2s", textAlign:"center" }}
+              onMouseEnter={e=>{ if(loginForm.username!=="PARAGON") e.currentTarget.style.borderColor="#10b98166"; }}
+              onMouseLeave={e=>{ if(loginForm.username!=="PARAGON") e.currentTarget.style.borderColor="#2e2e3a"; }}
+            >
+              <div style={{ width:44, height:44, borderRadius:"50%", background:"#10b981", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 10px", fontSize:18, fontWeight:800, color:"#fff" }}>P</div>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:14, color:"#10b981", marginBottom:4 }}>PARAGON</div>
+              <div style={{ fontSize:10, color:"#555" }}>No password</div>
+            </button>
+
+            {/* ADMIN button */}
+            <button
+              onClick={()=>{ setLoginForm(f=>({...f, username:"ADMIN", password:""})); setLoginError(""); }}
+              style={{ padding:"20px 12px", borderRadius:12, border:`2px solid ${loginForm.username==="ADMIN"?"#5b5bf6":"#2e2e3a"}`, background: loginForm.username==="ADMIN"?"#16162e":"#1e1e26", cursor:"pointer", transition:"all .2s", textAlign:"center" }}
+              onMouseEnter={e=>{ if(loginForm.username!=="ADMIN") e.currentTarget.style.borderColor="#5b5bf666"; }}
+              onMouseLeave={e=>{ if(loginForm.username!=="ADMIN") e.currentTarget.style.borderColor="#2e2e3a"; }}
+            >
+              <div style={{ width:44, height:44, borderRadius:"50%", background:"#5b5bf6", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 10px", fontSize:18, fontWeight:800, color:"#fff" }}>A</div>
+              <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:14, color:"#a5b4fc", marginBottom:4 }}>ADMIN</div>
+              <div style={{ fontSize:10, color:"#555" }}>Password required</div>
+            </button>
+          </div>
+
+          {/* Password field — only show when ADMIN selected */}
+          {loginForm.username === "ADMIN" && (
+            <div>
+              <label style={{ display:"block", fontSize:11, color:"#888", marginBottom:8, letterSpacing:".06em", textTransform:"uppercase" }}>Admin Password</label>
+              <input
+                type="password"
+                value={loginForm.password}
+                onChange={e=>{ setLoginForm(f=>({...f, password:e.target.value})); setLoginError(""); }}
+                onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+                placeholder="Enter password…"
+                autoFocus
+                style={{ width:"100%", background:"#1e1e26", border:`1px solid ${loginError?"#f87171":"#3a3a5e"}`, borderRadius:8, padding:"12px 14px", color:"#e8e6e1", fontSize:13, fontFamily:"'DM Mono',monospace", marginBottom:8 }}
+                onFocus={e=>e.target.style.borderColor="#5b5bf6"}
+                onBlur={e=>e.target.style.borderColor=loginError?"#f87171":"#3a3a5e"}
+              />
+              {loginError && <p style={{ color:"#f87171", fontSize:12, marginBottom:12 }}>{loginError}</p>}
+              <button
+                onClick={handleLogin}
+                style={{ width:"100%", background:"#5b5bf6", border:"none", color:"#fff", fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:500, padding:"12px", borderRadius:8, cursor:"pointer" }}
+                onMouseEnter={e=>e.currentTarget.style.background="#4a4ae0"}
+                onMouseLeave={e=>e.currentTarget.style.background="#5b5bf6"}
+              >
+                🔐 Sign in as Admin →
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 
@@ -906,33 +1138,89 @@ function App() {
         .sheet-scroll::-webkit-scrollbar-track{background:#12121a;border-radius:3px}
         .sheet-scroll::-webkit-scrollbar-thumb{background:#3a3a5e;border-radius:3px}
         .sheet-scroll::-webkit-scrollbar-thumb:hover{background:#5b5bf6}
+
+        /* ── RESPONSIVE ── */
+        @media (max-width:768px){
+          /* Header */
+          .paragon-header { flex-wrap:wrap; height:auto !important; padding:10px 16px !important; gap:8px; }
+          .paragon-logo { order:1; }
+          .paragon-nav { order:3; width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px; }
+          .paragon-nav::-webkit-scrollbar{display:none}
+          .paragon-actions { order:2; }
+          .nav-btn { padding:6px 12px !important; font-size:11px !important; white-space:nowrap; }
+          /* Main content */
+          .paragon-main { padding:16px 12px !important; }
+          /* Dashboard title */
+          .dash-header { flex-direction:column !important; align-items:flex-start !important; gap:10px; }
+          /* Summary cards */
+          .stat-card { padding:14px 16px !important; }
+          /* Accounts table — scroll */
+          .accounts-table-wrap { overflow-x:auto; }
+          /* Modal */
+          .modal { width:94vw !important; padding:20px !important; }
+          /* Form */
+          .form-wrap { max-width:100% !important; }
+          /* PDF buttons in header */
+          .btn-pdf span.pdf-label { display:none; }
+          /* User pill in header */
+          .user-pill-name { display:none; }
+        }
+        @media (max-width:480px){
+          .paragon-main { padding:12px 8px !important; }
+          .stat-card { padding:12px !important; }
+          .stat-card .stat-val { font-size:16px !important; }
+          .nav-btn { padding:5px 10px !important; font-size:10px !important; }
+          /* Stack account table header info */
+          .dash-header h1 { font-size:22px !important; }
+          /* Modal full screen on small mobile */
+          .modal { width:100vw !important; min-height:100vh; border-radius:0 !important; margin:0 !important; }
+          .modal-overlay { align-items:flex-end !important; padding:0 !important; }
+          /* PDF card */
+          .pdf-card { padding:10px 12px !important; }
+          /* Type buttons */
+          .type-btn { font-size:11px !important; padding:10px 4px !important; }
+          /* Currency buttons */
+          .currency-btn { padding:8px 4px !important; }
+        }
+        /* Tablet */
+        @media (min-width:481px) and (max-width:768px){
+          .modal { width:90vw !important; }
+        }
+        @media (min-width:769px) and (max-width:1024px){
+          .paragon-main { padding:24px 16px !important; }
+        }
       `}</style>
 
       {/* ── HEADER ── */}
-      <div style={{ borderBottom:"1px solid #1e1e26", padding:"0 32px", display:"flex", alignItems:"center", justifyContent:"space-between", height:56 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+      <div className="paragon-header" style={{ borderBottom:"1px solid #1e1e26", padding:"0 40px", display:"flex", alignItems:"center", justifyContent:"space-between", height:56 }}>
+        <div className="paragon-logo" style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:28, height:28, background:"#5b5bf6", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center" }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
           </div>
           <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:16, letterSpacing:"-.02em" }}>Paragon</span>
         </div>
-        <nav style={{ display:"flex", gap:4 }}>
-          {["dashboard","form","sheet"].map(v => (
+        <nav className="paragon-nav" style={{ display:"flex", gap:4 }}>
+          {["dashboard","account","form","sheet"].filter(v => v !== "sheet" || authUser === "ADMIN").map(v => (
             <button key={v} className={`nav-btn ${view===v?"active":""}`} onClick={()=>setView(v)}>
-              {v==="dashboard"?"📊 Dashboard":v==="form"?"✏️ Entry":"📋 Sheet"}
+              {v==="dashboard"?"🏠 Home":v==="account"?"👤 Account":v==="form"?"✏️ Entry":"⚙️ Admin"}
             </button>
           ))}
         </nav>
-        <div style={{ display:"flex", gap:8 }}>
+        <div className="paragon-actions" style={{ display:"flex", gap:8, alignItems:"center" }}>
           <button className="btn-pdf" onClick={()=>setShowPdfModal(true)}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
             PDF Report
           </button>
           <button className="btn-primary" style={{ padding:"8px 18px", fontSize:12 }} onClick={handleNew}>+ New Entry</button>
+          <div style={{ display:"flex", alignItems:"center", gap:8, background:"#1e1e26", border:"1px solid #2e2e3a", borderRadius:8, padding:"6px 12px" }}>
+            <div style={{ width:22, height:22, borderRadius:"50%", background: authUser==="ADMIN"?"#5b5bf6":"#10b981", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:800, color:"#fff" }}>{authUser?.[0]}</div>
+            <span style={{ fontSize:12, color:"#888" }}>{authUser}</span>
+            <button onClick={()=>{setAuthUser(null);setLoginForm({username:"",password:""});setLoginError("");}} style={{ background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:18, lineHeight:1, padding:"0 0 0 4px" }}>×</button>
+          </div>
         </div>
       </div>
 
-      <div style={{ maxWidth:1020, margin:"0 auto", padding:"32px 24px" }}>
+      <div className="paragon-main" style={{ maxWidth:1400, margin:"0 auto", padding:"28px 32px" }}>
 
         {/* ── DASHBOARD ── */}
         {view==="dashboard" && (
@@ -946,9 +1234,14 @@ function App() {
           />
         )}
 
+        {/* ── ACCOUNT DETAIL ── */}
+        {view==="account" && (
+          <AccountDetail entries={entries} people={people} avatarColor={avatarColor} fmt={fmt} ebColor={ebColor} onPDF={(name)=>generatePDF(name,entries,people)} />
+        )}
+
         {/* ── FORM ── */}
         {view==="form" && (
-          <div style={{ maxWidth:580 }}>
+          <div className="form-wrap" style={{ maxWidth:580 }}>
             <div style={{ marginBottom:26 }}>
               <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:4}}>
                 <h1 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:26, letterSpacing:"-.03em" }}>{editId!==null?"Edit Entry":"Paragon"}</h1>
@@ -1000,6 +1293,7 @@ function App() {
                 <div style={{ display:"flex", gap:10 }}>
                   {TYPES.map(t => (
                     <button key={t} onClick={()=>setForm(f=>({...f,type:t}))}
+                      className="type-btn"
                       style={{ flex:1, padding:"12px", borderRadius:8, border:"1px solid", cursor:"pointer", fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:500, transition:"all .2s",
                         background:form.type===t?(t==="Bill"?"#2d1a1a":"#1a2d1a"):"#1e1e26",
                         borderColor:form.type===t?(t==="Bill"?"#f87171":"#4ade80"):"#2e2e3a",
@@ -1018,6 +1312,25 @@ function App() {
                 {errors.amount&&<p style={{ color:"#f87171", fontSize:12, marginTop:6 }}>{errors.amount}</p>}
               </div>
 
+              {/* 5b. Currency */}
+              <div>
+                <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:8, letterSpacing:".06em", textTransform:"uppercase" }}>Currency</label>
+                <div style={{ display:"flex", gap:8 }}>
+                  {CURRENCIES.map(c => (
+                    <button key={c.code} onClick={()=>setForm(f=>({...f,currency:c.code}))}
+                      className="currency-btn"
+                      style={{ flex:1, padding:"10px 6px", borderRadius:8, border:"1px solid", cursor:"pointer",
+                        fontFamily:"'DM Mono',monospace", fontSize:12, fontWeight:500, transition:"all .2s",
+                        background: form.currency===c.code ? "#1e1e3a" : "#1e1e26",
+                        borderColor: form.currency===c.code ? "#5b5bf6" : "#2e2e3a",
+                        color: form.currency===c.code ? "#a5b4fc" : "#666" }}>
+                      <div style={{fontSize:16, marginBottom:2}}>{c.symbol}</div>
+                      <div style={{fontSize:10}}>{c.code}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* 6. Documents */}
               <div>
                 <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#888", marginBottom:10, letterSpacing:".06em", textTransform:"uppercase" }}>
@@ -1033,7 +1346,8 @@ function App() {
                   <strong style={{ color:avatarColor(form.name) }}>{form.name}</strong>
                   {form.source && <span> · <span style={{ color:"#666" }}>{form.source}</span></span>}
                   {" "} — {form.type==="Bill"?"📤 decreases":"📥 increases"} balance by{" "}
-                  <strong style={{ color:"#e8e6e1" }}>{fmt(Number(form.amount))}</strong>
+                  <strong style={{ color:"#e8e6e1" }}>{fmtC(Number(form.amount), form.currency)}</strong>
+                  <span style={{ marginLeft:6, fontSize:11, color:"#5b5bf6", background:"#1e1e3a", border:"1px solid #3a3a5e", padding:"2px 6px", borderRadius:4 }}>{form.currency}</span>
                   {form.entryBy && <span style={{ marginLeft:8, fontSize:11, color:ebColor(form.entryBy) }}>· prep. by {form.entryBy}</span>}
                   {form.docs.length>0&&<span style={{ color:"#a5b4fc", marginLeft:8 }}>· 📎{form.docs.length}</span>}
                   <span style={{ marginLeft:8, fontSize:11, color:"#f59e0b" }}>· 🕐 {new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</span>
@@ -1042,7 +1356,7 @@ function App() {
 
               <div style={{ display:"flex", gap:10 }}>
                 <button className="btn-primary" style={{ flex:1 }} onClick={handleSubmit}>{editId!==null?"Update Entry":"Add Entry"}</button>
-                {editId!==null&&<button className="btn-ghost" onClick={()=>{setEditId(null);setForm({name:people[0]||"",type:"Bill",amount:"",source:"",entryBy:entryByList[0]||"",docs:[]});setErrors({});}}>Cancel</button>}
+                {editId!==null&&<button className="btn-ghost" onClick={()=>{setEditId(null);setForm({name:people[0]||"",type:"Bill",amount:"",source:"",entryBy:entryByList[0]||"",currency:"USD",docs:[]});setErrors({});}}>Cancel</button>}
               </div>
             </div>
           </div>
@@ -1081,9 +1395,23 @@ function App() {
                 <button onClick={()=>setSheetSearch("")} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:16, lineHeight:1 }}>×</button>
               )}
             </div>
-            <div style={{ display:"flex", gap:8, marginBottom:18, flexWrap:"wrap" }}>
-              <button className={`filter-chip ${filterName==="ALL"?"active":""}`} onClick={()=>setFilterName("ALL")}>All</button>
-              {people.map(p=><button key={p} className={`filter-chip ${filterName===p?"active":""}`} onClick={()=>setFilterName(p)}>{p}</button>)}
+            <div style={{ display:"flex", gap:8, marginBottom:18, flexWrap:"wrap", alignItems:"center" }}>
+              <button className={`filter-chip ${filterName==="ALL"?"active":""}`} onClick={()=>setFilterName("ALL")}>
+                ☰ All
+              </button>
+              {people.map(p=>(
+                <button key={p} className={`filter-chip ${filterName===p?"active":""}`} onClick={()=>setFilterName(p)}
+                  style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{width:14,height:14,borderRadius:"50%",background:AVATAR_COLORS[people.indexOf(p)%AVATAR_COLORS.length],display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:800,color:"#fff",flexShrink:0}}>{p[0]}</span>
+                  {p}
+                </button>
+              ))}
+              {filterName !== "ALL" && (
+                <button onClick={()=>setFilterName("ALL")}
+                  style={{background:"#2d1a1a",border:"1px solid #5c2020",color:"#f87171",fontFamily:"'DM Mono',monospace",fontSize:11,padding:"5px 12px",borderRadius:20,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+                  ✕ Clear filter
+                </button>
+              )}
             </div>
             <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:8, color:"#444", fontSize:11 }}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
@@ -1091,24 +1419,26 @@ function App() {
             </div>
             <div className="card" style={{ padding:0, overflow:"hidden" }}>
               <div className="sheet-scroll" style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
-              <div style={{ minWidth:1210 }}>
+              <div style={{ minWidth:1490 }}>
               {/* Order: TXN ID · DATE · PREPARED BY · NAME · SOURCE · TYPE · AMOUNT · BALANCE · DOCS · ACTIONS */}
-              <div style={{ display:"grid", gridTemplateColumns:"120px 140px 155px 140px 130px 85px 110px 120px 60px 130px", padding:"11px 18px", borderBottom:"1px solid #2a2a32", background:"#12121a", position:"sticky", top:0, zIndex:2 }}>
+              <div style={{ display:"grid", gridTemplateColumns:"120px 135px 150px 135px 120px 110px 160px 170px 55px 130px", padding:"11px 18px", borderBottom:"1px solid #2a2a32", background:"#12121a", position:"sticky", top:0, zIndex:2 }}>
                 {["SUBMISSION ID","DATE","PREPARED BY","NAME","DETAILS","TYPE","AMOUNT","BALANCE","DOCS","ACTIONS"].map((h,i)=>(
                   <span key={i} style={{ fontSize:10, color: i===0?"#a5b4fc":i===1?"#f59e0b":"#555", letterSpacing:".08em", fontWeight:500 }}>{h}</span>
                 ))}
               </div>
               {(() => {
-                const running = {};
+                const running = {}; // key: "name::currency"
                 return filteredEntries.map((e, i) => {
-                  if (!running[e.name]) running[e.name] = 0;
-                  running[e.name] += e.type==="Payment"?e.amount:-e.amount;
-                  const bal = running[e.name];
+                  const cur = e.currency || "USD";
+                  const key = e.name + "::" + cur;
+                  if (!running[key]) running[key] = 0;
+                  running[key] += e.type==="Payment" ? e.amount : -e.amount;
+                  const bal = running[key];
                   const idx = people.indexOf(e.name);
                   const eidx = entryByList.indexOf(e.entryBy);
                   const eColor = EB_COLORS[eidx>=0?eidx%EB_COLORS.length:0];
                   return (
-                    <div key={e.id} className="sheet-row" style={{ display:"grid", gridTemplateColumns:"120px 140px 155px 140px 130px 85px 110px 120px 60px 130px", padding:"11px 18px", borderBottom:i<filteredEntries.length-1?"1px solid #1e1e26":"none", alignItems:"center" }}>
+                    <div key={e.id} className="sheet-row" style={{ display:"grid", gridTemplateColumns:"120px 135px 150px 135px 120px 110px 160px 170px 55px 130px", padding:"11px 18px", borderBottom:i<filteredEntries.length-1?"1px solid #1e1e26":"none", alignItems:"center" }}>
                       {/* 0. SUBMISSION ID */}
                       <div>
                         <span style={{ display:"inline-block", fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:"#a5b4fc", background:"#1a1a2e", border:"1px solid #3a3a5e", padding:"3px 7px", borderRadius:5, letterSpacing:".04em" }}>
@@ -1143,9 +1473,15 @@ function App() {
                       {/* 4. TYPE */}
                       <span className={`tag tag-${e.type.toLowerCase()}`}>{e.type}</span>
                       {/* 5. AMOUNT */}
-                      <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13 }}>{fmt(e.amount)}</span>
+                      <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                        <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13, whiteSpace:"nowrap" }}>{fmtC(e.amount, e.currency)}</span>
+                        {e.currency && e.currency !== "USD" && <span style={{ fontSize:9, color:"#5b5bf6", background:"#1e1e3a", border:"1px solid #3a3a5e", padding:"1px 5px", borderRadius:3, alignSelf:"flex-start" }}>{e.currency}</span>}
+                      </div>
                       {/* 6. BALANCE */}
-                      <span className={bal>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13 }}>{fmt(bal)}</span>
+                      <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                        <span className={bal>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13, whiteSpace:"nowrap" }}>{fmtC(bal, cur)}</span>
+                        {cur !== "USD" && <span style={{ fontSize:9, color:"#5b5bf6", background:"#1e1e3a", border:"1px solid #3a3a5e", padding:"1px 5px", borderRadius:3, alignSelf:"flex-start" }}>{cur}</span>}
+                      </div>
                       {/* 7. DOCS */}
                       <div>
                         {e.docs&&e.docs.length>0
@@ -1163,10 +1499,24 @@ function App() {
               })()}
               {filteredEntries.length===0&&<div style={{ textAlign:"center", padding:"40px", color:"#555", fontSize:13 }}>No entries. <span style={{ color:"#5b5bf6", cursor:"pointer" }} onClick={handleNew}>Add one →</span></div>}
               {filteredEntries.length>0&&(
-                <div style={{ display:"grid", gridTemplateColumns:"120px 140px 155px 140px 130px 85px 110px 120px 60px 130px", padding:"12px 18px", borderTop:"1px solid #2a2a32", background:"#12121a" }}>
+                <div style={{ display:"grid", gridTemplateColumns:"120px 135px 150px 135px 120px 110px 160px 170px 55px 130px", padding:"12px 18px", borderTop:"1px solid #2a2a32", background:"#12121a" }}>
                   <span/><span/><span style={{ fontSize:11, color:"#888", fontWeight:500 }}>TOTAL</span><span/><span/><span/>
-                  <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:13, color:"#e8e6e1" }}>{fmt(totals.bills+totals.payments)}</span>
-                  <span className={totals.balance>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:13 }}>{fmt(totals.balance)}</span>
+                  <div>
+                    {Object.entries(
+                      filteredEntries.reduce((acc, e) => {
+                        const c = e.currency||"USD";
+                        if (!acc[c]) acc[c] = 0;
+                        acc[c] += e.type==="Payment" ? e.amount : -e.amount;
+                        return acc;
+                      }, {})
+                    ).map(([code, bal]) => (
+                      <div key={code} style={{display:"flex",alignItems:"center",gap:4,marginBottom:2}}>
+                        <span style={{fontSize:9,color:"#5b5bf6",background:"#1e1e3a",border:"1px solid #3a3a5e",padding:"1px 4px",borderRadius:3}}>{code}</span>
+                        <span className={bal>=0?"balance-pos":"balance-neg"} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:12}}>{fmtC(bal,code)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <span/>
                   <span/><span/>
                 </div>
               )}
@@ -1250,8 +1600,21 @@ function App() {
 }
 
 
+    class ErrorBoundary extends React.Component {
+      constructor(props) { super(props); this.state = { error: null }; }
+      static getDerivedStateFromError(e) { return { error: e }; }
+      render() {
+        if (this.state.error) return (
+          <div style={{fontFamily:"monospace",padding:40,color:"#f87171",background:"#0f0f11",minHeight:"100vh"}}>
+            <h2 style={{marginBottom:16}}>⚠️ App Error</h2>
+            <pre style={{fontSize:13,whiteSpace:"pre-wrap"}}>{this.state.error.toString()}</pre>
+          </div>
+        );
+        return this.props.children;
+      }
+    }
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
+    root.render(<ErrorBoundary><App /></ErrorBoundary>);
   </script>
 </body>
 </html>
