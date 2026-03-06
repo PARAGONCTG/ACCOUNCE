@@ -11,6 +11,23 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCATgEXr21klG8xC4TKxikI4m0wYZTZTf0",
+      authDomain: "paragon-accounce.firebaseapp.com",
+      projectId: "paragon-accounce",
+      storageBucket: "paragon-accounce.firebasestorage.app",
+      messagingSenderId: "292138012238",
+      appId: "1:292138012238:web:3a66afc0fc6c455c607d1f"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const entriesCol  = () => db.collection("entries");
+    const peopleCol   = () => db.collection("config").doc("people");
+    const entryByCol  = () => db.collection("config").doc("entryBy");
+  </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body, #root { min-height: 100vh; }
@@ -20,7 +37,7 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useMemo, useRef } = React;
+    const { useState, useMemo, useRef, useEffect } = React;
 
 const TYPES = ["Bill", "Payment"];
 const DEFAULT_PEOPLE = ["LYNN", "GARRY", "HELLEN"];
@@ -712,8 +729,9 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
 
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 function App() {
-  const [entries, setEntries]         = useState(initialData);
+  const [entries, setEntries]         = useState([]);
   const [people, setPeople]           = useState(DEFAULT_PEOPLE);
+  const [dbLoading, setDbLoading]      = useState(true);
   const [entryByList, setEntryByList] = useState(DEFAULT_ENTRY_BY);
   const [form, setForm]               = useState({ name:"LYNN", type:"Bill", amount:"", source:"", entryBy:"AZIM", docs:[] });
   const [errors, setErrors]           = useState({});
@@ -726,6 +744,35 @@ function App() {
   const [filterName, setFilterName]   = useState("ALL");
   const [sheetSearch, setSheetSearch]  = useState("");
   const [showPdfModal, setShowPdfModal] = useState(false);
+
+
+  // ── FIREBASE SYNC ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    // Load people config
+    peopleCol().get().then(doc => {
+      if (doc.exists && doc.data().list) setPeople(doc.data().list);
+    });
+    entryByCol().get().then(doc => {
+      if (doc.exists && doc.data().list) setEntryByList(doc.data().list);
+    });
+    // Real-time listener for entries
+    const unsub = entriesCol().orderBy("createdAt", "asc").onSnapshot(snap => {
+      const data = snap.docs.map(d => ({ ...d.data(), _fireId: d.id }));
+      setEntries(data);
+      setDbLoading(false);
+    }, () => setDbLoading(false));
+    return () => unsub();
+  }, []);
+
+  // Save people to Firebase whenever it changes
+  useEffect(() => {
+    if (!dbLoading) peopleCol().set({ list: people });
+  }, [people]);
+
+  // Save entryByList to Firebase whenever it changes
+  useEffect(() => {
+    if (!dbLoading) entryByCol().set({ list: entryByList });
+  }, [entryByList]);
 
   const totals = useMemo(() => {
     const f = filterName === "ALL" ? entries : entries.filter(e => e.name === filterName);
@@ -753,10 +800,16 @@ function App() {
     if (Object.keys(errs).length) { setErrors(errs); return; }
     const row = { name:form.name, type:form.type, amount:Number(form.amount), source:form.source.trim(), entryBy:form.entryBy, docs:form.docs };
     if (editId !== null) {
-      setEntries(prev => prev.map(e => e.id===editId ? {...e,...row} : e));
+      // update in Firebase
+      const entry = entries.find(e => e.id === editId);
+      if (entry && entry._fireId) {
+        entriesCol().doc(entry._fireId).update(row);
+      }
       setEditId(null);
     } else {
-      setEntries(prev => [...prev, { id:nextId++, txnId:makeTxnId(nextTxnNum++), createdAt:new Date().toISOString(), ...row }]);
+      // add to Firebase
+      const newEntry = { id: nextId++, txnId: makeTxnId(nextTxnNum++), createdAt: new Date().toISOString(), ...row };
+      entriesCol().add(newEntry);
     }
     setForm({ name:people[0], type:"Bill", amount:"", source:"", entryBy:entryByList[0], docs:[] });
     setErrors({});
@@ -769,7 +822,10 @@ function App() {
     setForm({ name:entry.name, type:entry.type, amount:String(entry.amount), source:entry.source||"", entryBy:entry.entryBy||"", docs:entry.docs||[] });
     setView("form");
   };
-  const handleDelete = (id) => setEntries(prev => prev.filter(e => e.id !== id));
+  const handleDelete = (id) => {
+    const entry = entries.find(e => e.id === id);
+    if (entry && entry._fireId) entriesCol().doc(entry._fireId).delete();
+  };
   const handleNew = () => { setEditId(null); setForm({ name:people[0], type:"Bill", amount:"", source:"", entryBy:entryByList[0], docs:[] }); setErrors({}); setView("form"); };
 
   const handleAddPerson = () => {
@@ -795,6 +851,14 @@ function App() {
     }
     return res;
   }, [entries, filterName, sheetSearch]);
+
+  if (dbLoading) return (
+    <div style={{ fontFamily:"'DM Mono',monospace", minHeight:"100vh", background:"#0f0f11", color:"#e8e6e1", display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:16 }}>
+      <div style={{ width:44, height:44, border:"3px solid #2a2a32", borderTop:"3px solid #5b5bf6", borderRadius:"50%", animation:"spin 0.8s linear infinite" }}></div>
+      <div style={{ color:"#555", fontSize:13 }}>Connecting to database…</div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
 
   return (
     <div style={{ fontFamily:"'DM Mono',monospace", minHeight:"100vh", background:"#0f0f11", color:"#e8e6e1" }}>
