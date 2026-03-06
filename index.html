@@ -40,8 +40,8 @@
     const { useState, useMemo, useRef, useEffect } = React;
 
 const TYPES = ["Bill", "Payment"];
-const DEFAULT_PEOPLE = ["LYNN", "GARRY", "HELLEN"];
-const DEFAULT_ENTRY_BY = ["AZIM", "ZIDAN", "ALA UDDIN", "EMON", "PARVEZ"];
+const DEFAULT_PEOPLE = [];
+const DEFAULT_ENTRY_BY = [];
 
 let nextId = 5;
 let nextTxnNum = 5;
@@ -733,7 +733,7 @@ function App() {
   const [people, setPeople]           = useState(DEFAULT_PEOPLE);
   const [dbLoading, setDbLoading]      = useState(true);
   const [entryByList, setEntryByList] = useState(DEFAULT_ENTRY_BY);
-  const [form, setForm]               = useState({ name:"LYNN", type:"Bill", amount:"", source:"", entryBy:"AZIM", docs:[] });
+  const [form, setForm]               = useState({ name:"", type:"Bill", amount:"", source:"", entryBy:"", docs:[] });
   const [errors, setErrors]           = useState({});
   const [submitted, setSubmitted]     = useState(false);
   const [editId, setEditId]           = useState(null);
@@ -811,7 +811,7 @@ function App() {
       const newEntry = { id: nextId++, txnId: makeTxnId(nextTxnNum++), createdAt: new Date().toISOString(), ...row };
       entriesCol().add(newEntry);
     }
-    setForm({ name:people[0], type:"Bill", amount:"", source:"", entryBy:entryByList[0], docs:[] });
+    setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", docs:[] });
     setErrors({});
     setSubmitted(true);
     setTimeout(() => setSubmitted(false), 2200);
@@ -826,7 +826,7 @@ function App() {
     const entry = entries.find(e => e.id === id);
     if (entry && entry._fireId) entriesCol().doc(entry._fireId).delete();
   };
-  const handleNew = () => { setEditId(null); setForm({ name:people[0], type:"Bill", amount:"", source:"", entryBy:entryByList[0], docs:[] }); setErrors({}); setView("form"); };
+  const handleNew = () => { setEditId(null); setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", docs:[] }); setErrors({}); setView("form"); };
 
   const handleAddPerson = () => {
     const t = newPersonName.trim().toUpperCase();
@@ -1042,7 +1042,7 @@ function App() {
 
               <div style={{ display:"flex", gap:10 }}>
                 <button className="btn-primary" style={{ flex:1 }} onClick={handleSubmit}>{editId!==null?"Update Entry":"Add Entry"}</button>
-                {editId!==null&&<button className="btn-ghost" onClick={()=>{setEditId(null);setForm({name:people[0],type:"Bill",amount:"",source:"",entryBy:entryByList[0],docs:[]});setErrors({});}}>Cancel</button>}
+                {editId!==null&&<button className="btn-ghost" onClick={()=>{setEditId(null);setForm({name:people[0]||"",type:"Bill",amount:"",source:"",entryBy:entryByList[0]||"",docs:[]});setErrors({});}}>Cancel</button>}
               </div>
             </div>
           </div>
