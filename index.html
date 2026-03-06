@@ -646,10 +646,32 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
   const [selected, setSelected] = useState(null);
   const [acctSearch, setAcctSearch] = useState("");
   const [acctFilter, setAcctFilter] = useState("");
+  const [previewDocs, setPreviewDocs] = useState(null); // {docs, idx}
+
+  const color = selected ? avatarColor(selected) : "#5b5bf6";
 
   const filteredPeople = acctFilter.trim()
     ? people.filter(p => p.toLowerCase().includes(acctFilter.trim().toLowerCase()))
     : people;
+
+  // Compute entries for selected account
+  const acctEntries = selected
+    ? entries.filter(e => {
+        if (e.name !== selected) return false;
+        if (!acctSearch.trim()) return true;
+        const q = acctSearch.trim().toLowerCase();
+        return (
+          (e.txnId && e.txnId.toLowerCase().includes(q)) ||
+          (e.source && e.source.toLowerCase().includes(q)) ||
+          (e.entryBy && e.entryBy.toLowerCase().includes(q)) ||
+          e.type.toLowerCase().includes(q) ||
+          String(e.amount).includes(q)
+        );
+      })
+    : [];
+  const bills    = acctEntries.filter(e => e.type === "Bill").reduce((s, e) => s + e.amount, 0);
+  const payments = acctEntries.filter(e => e.type === "Payment").reduce((s, e) => s + e.amount, 0);
+  const balance  = payments - bills;
 
   if (!selected) {
     return (
@@ -801,9 +823,9 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
 
       {/* Table */}
       <div className="sheet-scroll" style={{ overflowX:"auto" }}>
-        <div style={{ minWidth:700 }}>
+        <div style={{ minWidth:900 }}>
           {/* Header */}
-          <div style={{ display:"grid", gridTemplateColumns:"110px 130px 80px 130px 110px 110px 55px", padding:"10px 20px", background:"#12121a", borderBottom:"1px solid #2a2a32" }}>
+          <div style={{ display:"grid", gridTemplateColumns:"120px 130px 90px 150px 160px 170px 55px", padding:"10px 20px", background:"#12121a", borderBottom:"1px solid #2a2a32" }}>
             {["SUB. ID","DATE","TYPE","DETAILS","AMOUNT","BALANCE","DOCS"].map((h,i) => (
               <span key={i} style={{ fontSize:10, color: i===0?"#a5b4fc":i===1?"#f59e0b":"#555", letterSpacing:".08em", fontWeight:500 }}>{h}</span>
             ))}
@@ -817,7 +839,7 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
             runningByCurrency[cur] += e.type === "Payment" ? e.amount : -e.amount;
             const bal = runningByCurrency[cur];
             return (
-              <div key={e.id} className="sheet-row" style={{ display:"grid", gridTemplateColumns:"110px 130px 80px 130px 110px 110px 55px", padding:"11px 20px", borderBottom:i<acctEntries.length-1?"1px solid #1e1e26":"none", alignItems:"center" }}>
+              <div key={e.id} className="sheet-row" style={{ display:"grid", gridTemplateColumns:"120px 130px 90px 150px 160px 170px 55px", padding:"11px 20px", borderBottom:i<acctEntries.length-1?"1px solid #1e1e26":"none", alignItems:"center" }}>
                 <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:"#a5b4fc", background:"#1a1a2e", border:"1px solid #3a3a5e", padding:"3px 7px", borderRadius:5, display:"inline-block" }}>{e.txnId||"—"}</span>
                 <div>
                   {e.createdAt ? (
@@ -838,14 +860,14 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
                 </div>
                 <div>
                   {e.docs&&e.docs.length>0
-                    ? <span className="doc-badge">📎 {e.docs.length}</span>
+                    ? <span className="doc-badge" onClick={()=>setPreviewDocs({docs:e.docs,idx:0})} title="Click to view attachments">📎 {e.docs.length}</span>
                     : <span style={{color:"#333",fontSize:11}}>—</span>}
                 </div>
               </div>
             );
           })}
           {acctEntries.length > 0 && (
-            <div style={{ display:"grid", gridTemplateColumns:"110px 130px 80px 130px 110px 110px 55px", padding:"12px 20px", borderTop:"1px solid #2a2a32", background:"#12121a" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"120px 130px 90px 150px 160px 170px 55px", padding:"12px 20px", borderTop:"1px solid #2a2a32", background:"#12121a" }}>
               <span/><span/><span/>
               <span style={{ fontSize:11, color:"#888", fontWeight:600 }}>TOTAL</span>
               <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:13, color:"#e8e6e1" }}>{fmt(bills+payments)}</span>
@@ -855,6 +877,56 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
           )}
         </div>
       </div>
+      {/* ── ATTACHMENT VIEWER MODAL ── */}
+      {previewDocs && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:3000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setPreviewDocs(null)}>
+          <div style={{background:"#16161b",border:"1px solid #2a2a32",borderRadius:14,overflow:"hidden",maxWidth:860,width:"100%",maxHeight:"90vh",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 18px",borderBottom:"1px solid #2a2a32",flexShrink:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:16}}>📎</span>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:"#e8e6e1"}}>{previewDocs.docs[previewDocs.idx].name}</div>
+                  <div style={{fontSize:10,color:"#555"}}>{previewDocs.idx+1} of {previewDocs.docs.length} attachment{previewDocs.docs.length>1?"s":""}</div>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                {previewDocs.docs.length > 1 && (<>
+                  <button onClick={()=>setPreviewDocs(p=>({...p,idx:Math.max(0,p.idx-1)}))} disabled={previewDocs.idx===0}
+                    style={{background:"#1e1e26",border:"1px solid #2e2e3a",color:previewDocs.idx===0?"#333":"#888",padding:"6px 11px",borderRadius:6,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>◀</button>
+                  <button onClick={()=>setPreviewDocs(p=>({...p,idx:Math.min(p.docs.length-1,p.idx+1)}))} disabled={previewDocs.idx===previewDocs.docs.length-1}
+                    style={{background:"#1e1e26",border:"1px solid #2e2e3a",color:previewDocs.idx===previewDocs.docs.length-1?"#333":"#888",padding:"6px 11px",borderRadius:6,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>▶</button>
+                </>)}
+                <a href={previewDocs.docs[previewDocs.idx].dataUrl} download={previewDocs.docs[previewDocs.idx].name}
+                  style={{background:"#1e1e2e",border:"1px solid #3a3a5e",color:"#a5b4fc",textDecoration:"none",padding:"6px 13px",borderRadius:6,fontSize:12,display:"flex",alignItems:"center",gap:5}}>
+                  ⬇ Download
+                </a>
+                <button onClick={()=>setPreviewDocs(null)} style={{background:"#2d1a1a",border:"1px solid #5c2020",color:"#f87171",padding:"6px 11px",borderRadius:6,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+              </div>
+            </div>
+            {previewDocs.docs.length > 1 && (
+              <div style={{display:"flex",gap:8,padding:"10px 18px",borderBottom:"1px solid #1e1e26",background:"#12121a",overflowX:"auto"}}>
+                {previewDocs.docs.map((d,i)=>(
+                  <div key={i} onClick={()=>setPreviewDocs(p=>({...p,idx:i}))}
+                    style={{flexShrink:0,width:52,height:52,borderRadius:7,border:`2px solid ${i===previewDocs.idx?"#5b5bf6":"#2a2a32"}`,overflow:"hidden",cursor:"pointer",background:"#1e1e26",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    {d.type.startsWith("image/") ? <img src={d.dataUrl} style={{width:"100%",height:"100%",objectFit:"cover"}}/> : <span style={{fontSize:20}}>📄</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{flex:1,overflow:"auto",padding:20,display:"flex",alignItems:"center",justifyContent:"center",background:"#0f0f11",minHeight:300}}>
+              {previewDocs.docs[previewDocs.idx].type.startsWith("image/")
+                ? <img src={previewDocs.docs[previewDocs.idx].dataUrl} alt={previewDocs.docs[previewDocs.idx].name} style={{maxWidth:"100%",maxHeight:"65vh",borderRadius:8,objectFit:"contain",boxShadow:"0 4px 32px rgba(0,0,0,.6)"}}/>
+                : previewDocs.docs[previewDocs.idx].type==="application/pdf"
+                  ? <iframe src={previewDocs.docs[previewDocs.idx].dataUrl} style={{width:"100%",height:"65vh",border:"none",borderRadius:8}} title={previewDocs.docs[previewDocs.idx].name}/>
+                  : <div style={{textAlign:"center",color:"#555"}}>
+                      <div style={{fontSize:48,marginBottom:12}}>📄</div>
+                      <p>Preview not available — <a href={previewDocs.docs[previewDocs.idx].dataUrl} download={previewDocs.docs[previewDocs.idx].name} style={{color:"#a5b4fc"}}>Download to view</a></p>
+                    </div>
+              }
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
