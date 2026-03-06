@@ -7,7 +7,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%235b5bf6'/><text y='.85em' font-size='72' x='12' fill='white'>P</text></svg>"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500&family=Syne:wght@700;800&display=swap" rel="stylesheet"/>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -55,8 +55,7 @@ let nextTxnNum = 5;
 const makeTxnId = (n) => "TXN-" + String(n).padStart(4, "0");
 const fmtDate = (iso) => {
   const d = new Date(iso);
-  return d.toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" }) + " " +
-    d.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+  return d.toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" });
 };
 
 const initialData = [
@@ -78,7 +77,7 @@ const EB_COLORS    = ["#a78bfa","#fb923c","#34d399","#f472b6","#60a5fa","#facc15
 function generatePDF(person, entries, people) {
   const pe    = entries.filter(e => e.name === person);
   const today = new Date().toLocaleDateString("en-GB", { year:"numeric", month:"long", day:"numeric" });
-  const now   = new Date().toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+
 
   // Group by currency
   const cMap = {};
@@ -195,7 +194,7 @@ table{border-collapse:collapse;width:100%}
     <div>
       <div style="font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#555;margin-bottom:6px">Account Statement</div>
       <div style="font-size:26px;font-weight:800;color:#000;letter-spacing:-.02em;margin-bottom:2px">${person}</div>
-      <div style="font-size:11px;color:#444">Generated: ${today} at ${now}</div>
+      <div style="font-size:11px;color:#444">Generated: ${today}</div>
     </div>
     <div style="text-align:right">
       <div style="font-size:18px;font-weight:800;color:#000;letter-spacing:-.01em">PARAGON</div>
@@ -217,7 +216,7 @@ table{border-collapse:collapse;width:100%}
       <thead>
         <tr style="background:#e8e8e8">
           <th style="padding:8px 10px;text-align:left;font-size:9px;color:#000;font-weight:800;letter-spacing:.07em;text-transform:uppercase;border-bottom:1.5px solid #000">SUB. ID</th>
-          <th style="padding:8px 10px;text-align:left;font-size:9px;color:#000;font-weight:800;letter-spacing:.07em;text-transform:uppercase;border-bottom:1.5px solid #000">Date</th>
+          <th style="padding:8px 10px;text-align:left;font-size:9px;color:#000;font-weight:800;letter-spacing:.07em;text-transform:uppercase;border-bottom:1.5px solid #000">Bill/Payment Date</th>
           <th style="padding:8px 10px;text-align:center;font-size:9px;color:#000;font-weight:800;letter-spacing:.07em;text-transform:uppercase;border-bottom:1.5px solid #000">Type</th>
           <th style="padding:8px 10px;text-align:left;font-size:9px;color:#000;font-weight:800;letter-spacing:.07em;text-transform:uppercase;border-bottom:1.5px solid #000">Details</th>
           <th style="padding:8px 10px;text-align:left;font-size:9px;color:#000;font-weight:800;letter-spacing:.07em;text-transform:uppercase;border-bottom:1.5px solid #000">Prepared By</th>
@@ -524,6 +523,9 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
           </div>
         </div>
 
+        {/* Scrollable table body */}
+        <div style={{overflowX:"auto", WebkitOverflowScrolling:"touch"}}>
+        <div style={{minWidth:600}}>
         {/* Column headers */}
         <div style={{display:"grid", gridTemplateColumns:"1fr 200px 200px 260px 90px", padding:"10px 18px", background:"#12121a", borderBottom:"1px solid #2a2a32"}}>
           {[
@@ -652,6 +654,8 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
           </div>
         )}
 
+        </div>{/* end minWidth */}
+        </div>{/* end scroll wrapper */}
         {/* Pagination */}
         {totalPages > 1 && (
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"12px 18px",borderTop:"1px solid #1e1e26"}}>
@@ -795,7 +799,7 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
   return (
     <div className="card" style={{ padding:0, overflow:"hidden" }}>
       {/* Back bar */}
-      <div style={{ padding:"14px 20px", borderBottom:"1px solid #2a2a32", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
+      <div className="acct-back-bar" style={{ padding:"14px 20px", borderBottom:"1px solid #2a2a32", display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <button onClick={() => { setSelected(null); setAcctSearch(""); }}
             style={{ background:"#1e1e26", border:"1px solid #2e2e3a", color:"#888", fontFamily:"'DM Mono',monospace", fontSize:12, padding:"7px 12px", borderRadius:7, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}
@@ -855,7 +859,7 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
       })()}
 
       {/* Table */}
-      <div className="sheet-scroll" style={{ overflowX:"auto" }}>
+      <div className="sheet-scroll" style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
         <div style={{ minWidth:900 }}>
           {/* Header */}
           <div style={{ display:"grid", gridTemplateColumns:"120px 130px 90px 150px 160px 170px 55px", padding:"10px 20px", background:"#12121a", borderBottom:"1px solid #2a2a32" }}>
@@ -878,7 +882,6 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
                   {e.createdAt ? (
                     <>
                       <div style={{ fontSize:11, color:"#e8e6e1" }}>{new Date(e.createdAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div>
-                      <div style={{ fontSize:10, color:"#555" }}>{new Date(e.createdAt).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}</div>
                     </>
                   ) : <span style={{color:"#333",fontSize:11}}>—</span>}
                 </div>
@@ -971,7 +974,7 @@ function App() {
   const [people, setPeople]           = useState(DEFAULT_PEOPLE);
   const [dbLoading, setDbLoading]      = useState(true);
   const [entryByList, setEntryByList] = useState(DEFAULT_ENTRY_BY);
-  const [form, setForm]               = useState({ name:"", type:"Bill", amount:"", source:"", entryBy:"", currency:"USD", docs:[] });
+  const [form, setForm]               = useState({ name:"", type:"Bill", amount:"", source:"", entryBy:"", currency:"USD", docs:[], txDate: new Date().toISOString().slice(0,10) });
   const [errors, setErrors]           = useState({});
   const [submitted, setSubmitted]     = useState(false);
   const [editId, setEditId]           = useState(null);
@@ -1047,7 +1050,7 @@ function App() {
   const handleSubmit = () => {
     const errs = validate();
     if (Object.keys(errs).length) { setErrors(errs); return; }
-    const row = { name:form.name, type:form.type, amount:Number(form.amount), source:form.source.trim(), entryBy:form.entryBy, currency:form.currency||"USD", docs:form.docs };
+    const row = { name:form.name, type:form.type, amount:Number(form.amount), source:form.source.trim(), entryBy:form.entryBy, currency:form.currency||"USD", docs:form.docs, createdAt: form.txDate ? form.txDate + "T00:00:00" : new Date().toISOString() };
     if (editId !== null) {
       // update in Firebase
       const entry = entries.find(e => e.id === editId);
@@ -1057,10 +1060,10 @@ function App() {
       setEditId(null);
     } else {
       // add to Firebase
-      const newEntry = { id: nextId++, txnId: makeTxnId(nextTxnNum++), createdAt: new Date().toISOString(), ...row };
+      const newEntry = { id: nextId++, txnId: makeTxnId(nextTxnNum++), ...row };
       entriesCol().add(newEntry);
     }
-    setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", docs:[] });
+    setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", currency:"USD", docs:[], txDate: new Date().toISOString().slice(0,10) });
     setErrors({});
     setSubmitted(true);
     setTimeout(() => setSubmitted(false), 2200);
@@ -1068,14 +1071,14 @@ function App() {
 
   const handleEdit = (entry) => {
     setEditId(entry.id);
-    setForm({ name:entry.name, type:entry.type, amount:String(entry.amount), source:entry.source||"", entryBy:entry.entryBy||"", currency:entry.currency||"USD", docs:entry.docs||[] });
+    setForm({ name:entry.name, type:entry.type, amount:String(entry.amount), source:entry.source||"", entryBy:entry.entryBy||"", currency:entry.currency||"USD", docs:entry.docs||[], txDate: entry.createdAt ? entry.createdAt.slice(0,10) : new Date().toISOString().slice(0,10) });
     setView("form");
   };
   const handleDelete = (id) => {
     const entry = entries.find(e => e.id === id);
     if (entry && entry._fireId) entriesCol().doc(entry._fireId).delete();
   };
-  const handleNew = () => { setEditId(null); setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", currency:"USD", docs:[] }); setErrors({}); setView("form"); };
+  const handleNew = () => { setEditId(null); setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", currency:"USD", docs:[], txDate: new Date().toISOString().slice(0,10) }); setErrors({}); setView("form"); };
 
   const handleAddPerson = () => {
     const t = newPersonName.trim().toUpperCase();
@@ -1246,29 +1249,54 @@ function App() {
 
         /* ── RESPONSIVE ── */
         @media (max-width:768px){
-          /* Header */
-          .paragon-header { flex-wrap:wrap; height:auto !important; padding:10px 16px !important; gap:8px; }
-          .paragon-logo { order:1; }
-          .paragon-nav { order:3; width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:4px; }
+          /* Header - 2 rows: top=logo+actions, bottom=nav */
+          .paragon-header { flex-wrap:wrap; height:auto !important; padding:8px 12px 0 12px !important; gap:0; align-items:center; }
+          .paragon-logo { order:1; flex:1; }
+          .paragon-actions { order:2; display:flex; align-items:center; gap:5px !important; flex-shrink:0; }
+          .paragon-nav { order:3; width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; padding:6px 0 8px 0; border-top:1px solid #1e1e26; margin-top:8px; }
           .paragon-nav::-webkit-scrollbar{display:none}
-          .paragon-actions { order:2; }
           .nav-btn { padding:6px 12px !important; font-size:11px !important; white-space:nowrap; }
+          /* Hide PDF label text on mobile, keep icon */
+          .btn-pdf { padding:7px 10px !important; font-size:11px !important; }
+          /* New Entry button smaller */
+          .btn-primary { padding:7px 10px !important; font-size:11px !important; }
           /* Main content */
-          .paragon-main { padding:16px 12px !important; }
+          .paragon-main { padding:12px 10px !important; }
           /* Dashboard title */
-          .dash-header { flex-direction:column !important; align-items:flex-start !important; gap:10px; }
-          /* Summary cards */
-          .stat-card { padding:14px 16px !important; }
-          /* Accounts table — scroll */
-          .accounts-table-wrap { overflow-x:auto; }
+          .dash-header { flex-direction:column !important; align-items:flex-start !important; gap:8px; }
+          /* Summary cards - stack on mobile */
+          .stat-card { padding:12px 14px !important; }
+          /* Accounts table — horizontal scroll */
+          .accounts-table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+          .accounts-table-wrap > div { min-width:600px; }
+          /* Sheet scroll */
+          .sheet-scroll { overflow-x:auto !important; -webkit-overflow-scrolling:touch; }
+          .sheet-scroll > div { min-width:900px !important; }
           /* Modal */
-          .modal { width:94vw !important; padding:20px !important; }
+          .modal { width:96vw !important; max-width:96vw !important; padding:16px !important; margin:8px !important; }
           /* Form */
-          .form-wrap { max-width:100% !important; }
+          .form-wrap { max-width:100% !important; padding:0 !important; }
           /* PDF buttons in header */
           .btn-pdf span.pdf-label { display:none; }
-          /* User pill in header */
-          .user-pill-name { display:none; }
+
+          /* Home table rows - fix overflow */
+          .home-account-row { font-size:11px !important; }
+          /* Summary stats grid - 1 col on very small */
+          .summary-cards { grid-template-columns:1fr !important; }
+        }
+        @media (max-width:480px){
+          .paragon-main { padding:10px 8px !important; }
+          .stat-card { padding:10px 12px !important; font-size:12px !important; }
+          .nav-btn { padding:5px 8px !important; font-size:10px !important; }
+          .accounts-table-wrap > div { min-width:560px !important; }
+          /* Account detail back bar */
+          .acct-back-bar { flex-direction:column !important; align-items:flex-start !important; gap:8px !important; }
+          .acct-back-bar .search-wrap { width:100% !important; }
+          /* Hide username text on very small screens */
+          .user-pill-name { display:none !important; }
+          /* Compact buttons */
+          .btn-pdf { font-size:0 !important; padding:7px 9px !important; }
+          .btn-pdf svg { display:inline-block !important; }
         }
         @media (max-width:480px){
           .paragon-main { padding:12px 8px !important; }
@@ -1297,12 +1325,12 @@ function App() {
       `}</style>
 
       {/* ── HEADER ── */}
-      <div className="paragon-header" style={{ borderBottom:"1px solid #1e1e26", padding:"0 40px", display:"flex", alignItems:"center", justifyContent:"space-between", height:56 }}>
+      <div className="paragon-header" style={{ borderBottom:"1px solid #1e1e26", padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", minHeight:56, flexWrap:"wrap", gap:0 }}>
         <div className="paragon-logo" style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:28, height:28, background:"#5b5bf6", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center" }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
           </div>
-          <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:16, letterSpacing:"-.02em" }}>Paragon</span>
+          <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:17, letterSpacing:"-.02em", color:"#fff" }}>Paragon</span>
         </div>
         <nav className="paragon-nav" style={{ display:"flex", gap:4 }}>
           {["dashboard","account","form","sheet"].filter(v => v !== "sheet" || authUser === "ADMIN").map(v => (
@@ -1317,9 +1345,9 @@ function App() {
             PDF Report
           </button>
           <button className="btn-primary" style={{ padding:"8px 18px", fontSize:12 }} onClick={handleNew}>+ New Entry</button>
-          <div style={{ display:"flex", alignItems:"center", gap:8, background:"#1e1e26", border:"1px solid #2e2e3a", borderRadius:8, padding:"6px 12px" }}>
-            <div style={{ width:22, height:22, borderRadius:"50%", background: authUser==="ADMIN"?"#5b5bf6":"#10b981", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:800, color:"#fff" }}>{authUser?.[0]}</div>
-            <span style={{ fontSize:12, color:"#888" }}>{authUser}</span>
+          <div style={{ display:"flex", alignItems:"center", gap:8, background:"#1e1e26", border:"1px solid #2e2e3a", borderRadius:8, padding:"6px 12px", whiteSpace:"nowrap", flexShrink:0 }}>
+            <div style={{ width:22, height:22, borderRadius:"50%", background: authUser==="ADMIN"?"#5b5bf6":"#10b981", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:800, color:"#fff", flexShrink:0 }}>{authUser?.[0]}</div>
+            <span className="user-pill-name" style={{ fontSize:12, color:"#888", whiteSpace:"nowrap", overflow:"hidden", maxWidth:80, textOverflow:"ellipsis" }}>{authUser}</span>
             <button onClick={()=>{setAuthUser(null);setLoginForm({username:"",password:""});setLoginError("");}} style={{ background:"none", border:"none", color:"#555", cursor:"pointer", fontSize:18, lineHeight:1, padding:"0 0 0 4px" }}>×</button>
           </div>
         </div>
@@ -1392,7 +1420,23 @@ function App() {
                   onChange={e=>setForm(f=>({...f,source:e.target.value}))}/>
               </div>
 
-              {/* 4. Type */}
+              {/* 4. Bill / Payment Date */}
+              <div>
+                <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:8, letterSpacing:".06em", textTransform:"uppercase" }}>
+                  Bill / Payment Date
+                </label>
+                <input
+                  type="date"
+                  className="input-field"
+                  value={form.txDate || new Date().toISOString().slice(0,10)}
+                  max={new Date().toISOString().slice(0,10)}
+                  onChange={e=>setForm(f=>({...f,txDate:e.target.value}))}
+                  style={{ colorScheme:"dark", cursor:"pointer", fontFamily:"'DM Mono',monospace" }}
+                />
+                <p style={{ color:"#555", fontSize:11, marginTop:5 }}>Date of the bill or payment · defaults to today</p>
+              </div>
+
+              {/* 5. Type */}
               <div>
                 <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:10, letterSpacing:".06em", textTransform:"uppercase" }}>Type</label>
                 <div style={{ display:"flex", gap:10 }}>
@@ -1461,7 +1505,7 @@ function App() {
 
               <div style={{ display:"flex", gap:10 }}>
                 <button className="btn-primary" style={{ flex:1 }} onClick={handleSubmit}>{editId!==null?"Update Entry":"Add Entry"}</button>
-                {editId!==null&&<button className="btn-ghost" onClick={()=>{setEditId(null);setForm({name:people[0]||"",type:"Bill",amount:"",source:"",entryBy:entryByList[0]||"",currency:"USD",docs:[]});setErrors({});}}>Cancel</button>}
+                {editId!==null&&<button className="btn-ghost" onClick={()=>{setEditId(null);setForm({name:people[0]||"",type:"Bill",amount:"",source:"",entryBy:entryByList[0]||"",currency:"USD",docs:[],txDate:new Date().toISOString().slice(0,10)});setErrors({});}}>Cancel</button>}
               </div>
             </div>
           </div>
@@ -1555,7 +1599,6 @@ function App() {
                         {e.createdAt ? (
                           <div>
                             <div style={{ fontSize:11, color:"#e8e6e1", fontWeight:500 }}>{new Date(e.createdAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div>
-                            <div style={{ fontSize:10, color:"#555", marginTop:1 }}>{new Date(e.createdAt).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"})}</div>
                           </div>
                         ) : <span style={{color:"#333",fontSize:11}}>—</span>}
                       </div>
