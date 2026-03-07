@@ -1399,6 +1399,428 @@ function RequestHistoryView({ pendingEntries, requestHistory, people, entryByLis
 }
 
 
+// ── ANALYTICS VIEW ────────────────────────────────────────────────────────────
+function AnalyticsView({ entries, people }) {
+  const [period, setPeriod] = useState("all");
+  const [selectedPerson, setSelectedPerson] = useState("ALL");
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+  const now = new Date();
+  const filterByPeriod = (e) => {
+    const d = new Date(e.createdAt);
+    if (period === "all")  return true;
+    if (period === "7d")   return (now - d) <= 7*864e5;
+    if (period === "30d")  return (now - d) <= 30*864e5;
+    if (period === "90d")  return (now - d) <= 90*864e5;
+    if (period === "year") return d.getFullYear() === now.getFullYear();
+    return true;
+  };
+
+  const base = entries.filter(filterByPeriod).filter(e => selectedPerson === "ALL" || e.name === selectedPerson);
+
+  const txCount       = base.length;
+
+  // ── per-currency totals ───────────────────────────────────────────────────
+  const ccyTotals = {};
+  base.forEach(e => {
+    const c = e.currency || "USD";
+    if (!ccyTotals[c]) ccyTotals[c] = { bills:0, payments:0 };
+    if (e.type === "Bill") ccyTotals[c].bills += e.amount;
+    else ccyTotals[c].payments += e.amount;
+  });
+  const ccyTotalsList = Object.entries(ccyTotals).sort((a,b)=>(b[1].bills+b[1].payments)-(a[1].bills+a[1].payments));
+
+  // kept for chart/donut logic that still uses single-value totals
+  const totalBills    = base.filter(e=>e.type==="Bill").reduce((s,e)=>s+e.amount,0);
+  const totalPayments = base.filter(e=>e.type==="Payment").reduce((s,e)=>s+e.amount,0);
+  const netBalance    = totalPayments - totalBills;
+
+  // ── monthly trend (last 7 months) ────────────────────────────────────────
+  const months = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ label: d.toLocaleString("en-US",{month:"short"}), year: d.getFullYear(), month: d.getMonth() });
+  }
+  const monthlyData = months.map(m => {
+    const me = entries.filter(e => {
+      const d = new Date(e.createdAt);
+      return d.getMonth() === m.month && d.getFullYear() === m.year &&
+             (selectedPerson === "ALL" || e.name === selectedPerson);
+    });
+    return {
+      label: m.label,
+      bills: me.filter(e=>e.type==="Bill").reduce((s,e)=>s+e.amount,0),
+      payments: me.filter(e=>e.type==="Payment").reduce((s,e)=>s+e.amount,0),
+    };
+  });
+
+  const maxMonthly = Math.max(...monthlyData.flatMap(m=>[m.bills, m.payments]), 1);
+
+  // ── per-person breakdown ──────────────────────────────────────────────────
+  const personData = people.map(p => {
+    const pe = base.filter(e=>e.name===p);
+    const bills    = pe.filter(e=>e.type==="Bill").reduce((s,e)=>s+e.amount,0);
+    const payments = pe.filter(e=>e.type==="Payment").reduce((s,e)=>s+e.amount,0);
+    return { name:p, bills, payments, balance: payments-bills, count: pe.length };
+  }).filter(p=>p.count>0).sort((a,b)=>b.bills-a.bills);
+
+  const maxPersonBills = Math.max(...personData.map(p=>p.bills), 1);
+
+  // ── entry-by breakdown ────────────────────────────────────────────────────
+  const ebMap = {};
+  base.forEach(e => {
+    if (!e.entryBy) return;
+    if (!ebMap[e.entryBy]) ebMap[e.entryBy] = { bills:0, payments:0, count:0 };
+    if (e.type==="Bill") ebMap[e.entryBy].bills += e.amount;
+    else ebMap[e.entryBy].payments += e.amount;
+    ebMap[e.entryBy].count++;
+  });
+  const ebData = Object.entries(ebMap).map(([name,v])=>({name,...v})).sort((a,b)=>b.count-a.count);
+
+  // ── currency mix ─────────────────────────────────────────────────────────
+  const ccyMap = {};
+  base.forEach(e => {
+    const c = e.currency||"USD";
+    if (!ccyMap[c]) ccyMap[c] = 0;
+    ccyMap[c]++;
+  });
+  const ccyData = Object.entries(ccyMap).map(([code,count])=>({code,count})).sort((a,b)=>b.count-a.count);
+  const ccyTotal = ccyData.reduce((s,c)=>s+c.count,0)||1;
+
+  // ── type ratio donut (SVG) ────────────────────────────────────────────────
+  const billCount    = base.filter(e=>e.type==="Bill").length;
+  const paymentCount = base.filter(e=>e.type==="Payment").length;
+  const total        = billCount + paymentCount || 1;
+  const billPct      = billCount / total;
+  const r = 28, cx = 36, cy = 36, circumference = 2 * Math.PI * r;
+  const billArc = circumference * billPct;
+
+  const fmt2 = (v) => {
+    if (v >= 1e6) return "$"+(v/1e6).toFixed(1)+"M";
+    if (v >= 1e3) return "$"+(v/1e3).toFixed(1)+"K";
+    return "$"+v.toFixed(0);
+  };
+
+  const PERSON_COLORS = ["#5b5bf6","#f59e0b","#10b981","#f97316","#8b5cf6","#06b6d4","#f43f5e","#a78bfa","#fb923c","#34d399"];
+  const CCY_COLORS    = { USD:"#5b5bf6", CNY:"#f59e0b", BDT:"#10b981", EUR:"#8b5cf6" };
+
+  return (
+    <div>
+      {/* ── Header ── */}
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h1 style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:26,letterSpacing:"-.03em",marginBottom:4}}>Analytics</h1>
+          <p style={{color:"#555",fontSize:13}}>{txCount} transaction{txCount!==1?"s":""} · {base.filter(e=>e.type==="Bill").length} bills · {base.filter(e=>e.type==="Payment").length} payments</p>
+        </div>
+        {/* Controls */}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {/* Period */}
+          <div style={{display:"flex",gap:4,background:"#12121a",border:"1px solid #2a2a32",borderRadius:8,padding:4}}>
+            {[["all","All"],["7d","7D"],["30d","30D"],["90d","90D"],["year","This Year"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setPeriod(k)}
+                style={{padding:"5px 12px",borderRadius:5,border:"none",fontFamily:"'DM Mono',monospace",fontSize:11,cursor:"pointer",
+                  background:period===k?"#5b5bf6":"transparent",color:period===k?"#fff":"#666",transition:"all .15s"}}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {/* Person filter */}
+          <select value={selectedPerson} onChange={e=>setSelectedPerson(e.target.value)}
+            style={{background:"#1e1e26",border:"1px solid #2e2e3a",borderRadius:8,padding:"6px 12px",color:"#e8e6e1",fontSize:12,fontFamily:"'DM Mono',monospace",cursor:"pointer",colorScheme:"dark"}}>
+            <option value="ALL">All Accounts</option>
+            {people.map(p=><option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* ── KPI Row ── */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+
+        {/* Total Bills */}
+        <div style={{background:"#16161b",border:"1px solid #2a2a32",borderRadius:12,padding:"16px 18px",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:12,right:14,fontSize:22,opacity:.18}}>📤</div>
+          <div style={{fontSize:10,color:"#555",letterSpacing:".07em",textTransform:"uppercase",marginBottom:8}}>Total Bills</div>
+          {ccyTotalsList.length === 0 ? <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:22,color:"#fb923c"}}>—</div> : (
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {ccyTotalsList.map(([code,v])=>(
+                <div key={code} style={{display:"flex",alignItems:"baseline",gap:7}}>
+                  <span style={{fontSize:9,color:"#fb923c",background:"#fb923c18",border:"1px solid #fb923c44",padding:"1px 5px",borderRadius:3,fontWeight:700,flexShrink:0}}>{code}</span>
+                  <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:v.bills>=1e6?15:v.bills>=1e3?18:20,color:"#fb923c",lineHeight:1}}>{fmtC(v.bills,code)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{fontSize:11,color:"#444",marginTop:6}}>{base.filter(e=>e.type==="Bill").length} entries</div>
+          <div style={{position:"absolute",bottom:0,left:0,right:0,height:3,background:"#2d1a0a",borderBottom:"2px solid #fb923c44"}}/>
+        </div>
+
+        {/* Total Payments */}
+        <div style={{background:"#16161b",border:"1px solid #2a2a32",borderRadius:12,padding:"16px 18px",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:12,right:14,fontSize:22,opacity:.18}}>📥</div>
+          <div style={{fontSize:10,color:"#555",letterSpacing:".07em",textTransform:"uppercase",marginBottom:8}}>Total Payments</div>
+          {ccyTotalsList.length === 0 ? <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:22,color:"#34d399"}}>—</div> : (
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {ccyTotalsList.map(([code,v])=>(
+                <div key={code} style={{display:"flex",alignItems:"baseline",gap:7}}>
+                  <span style={{fontSize:9,color:"#34d399",background:"#34d39918",border:"1px solid #34d39944",padding:"1px 5px",borderRadius:3,fontWeight:700,flexShrink:0}}>{code}</span>
+                  <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:v.payments>=1e6?15:v.payments>=1e3?18:20,color:"#34d399",lineHeight:1}}>{fmtC(v.payments,code)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{fontSize:11,color:"#444",marginTop:6}}>{base.filter(e=>e.type==="Payment").length} entries</div>
+          <div style={{position:"absolute",bottom:0,left:0,right:0,height:3,background:"#0a2010",borderBottom:"2px solid #34d39944"}}/>
+        </div>
+
+        {/* Net Balance */}
+        <div style={{background:"#16161b",border:"1px solid #2a2a32",borderRadius:12,padding:"16px 18px",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:12,right:14,fontSize:22,opacity:.18}}>⚖️</div>
+          <div style={{fontSize:10,color:"#555",letterSpacing:".07em",textTransform:"uppercase",marginBottom:8}}>Net Balance</div>
+          {ccyTotalsList.length === 0 ? <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:22,color:"#a5b4fc"}}>—</div> : (
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              {ccyTotalsList.map(([code,v])=>{
+                const bal = v.payments - v.bills;
+                const col = bal >= 0 ? "#34d399" : "#fb923c";
+                return (
+                  <div key={code} style={{display:"flex",alignItems:"baseline",gap:7}}>
+                    <span style={{fontSize:9,color:col,background:col+"18",border:`1px solid ${col}44`,padding:"1px 5px",borderRadius:3,fontWeight:700,flexShrink:0}}>{code}</span>
+                    <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:Math.abs(bal)>=1e6?15:Math.abs(bal)>=1e3?18:20,color:col,lineHeight:1}}>{fmtC(Math.abs(bal),code)}</span>
+                    <span style={{fontSize:9,color:col,fontWeight:700}}>{bal>=0?"CR":"DR"}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div style={{fontSize:11,color:"#444",marginTop:6}}>{netBalance>=0?"Surplus":"Deficit"}</div>
+          <div style={{position:"absolute",bottom:0,left:0,right:0,height:3,background:netBalance>=0?"#0a2010":"#2d1a0a",borderBottom:`2px solid ${netBalance>=0?"#34d399":"#fb923c"}44`}}/>
+        </div>
+
+        {/* Transactions */}
+        <div style={{background:"#16161b",border:"1px solid #2a2a32",borderRadius:12,padding:"16px 18px",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",top:12,right:14,fontSize:22,opacity:.18}}>🔢</div>
+          <div style={{fontSize:10,color:"#555",letterSpacing:".07em",textTransform:"uppercase",marginBottom:8}}>Transactions</div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:36,color:"#a5b4fc",marginBottom:4,lineHeight:1}}>{txCount}</div>
+          <div style={{fontSize:11,color:"#444"}}>{people.filter(p=>base.some(e=>e.name===p)).length} active accounts</div>
+          {ccyTotalsList.length > 0 && (
+            <div style={{display:"flex",gap:4,marginTop:8,flexWrap:"wrap"}}>
+              {ccyTotalsList.map(([code])=>(
+                <span key={code} style={{fontSize:9,color:"#5b5bf6",background:"#1e1e3a",border:"1px solid #3a3a5e",padding:"1px 6px",borderRadius:3,fontWeight:700}}>{code}</span>
+              ))}
+            </div>
+          )}
+          <div style={{position:"absolute",bottom:0,left:0,right:0,height:3,background:"#16162e",borderBottom:"2px solid #a5b4fc44"}}/>
+        </div>
+
+      </div>
+
+      {/* ── Charts row 1: Monthly Trend + Donut ── */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:12,marginBottom:12}}>
+
+        {/* Monthly bar chart */}
+        <div style={{background:"#16161b",border:"1px solid #2a2a32",borderRadius:12,padding:"18px 20px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+            <div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:14,marginBottom:2}}>Monthly Trend</div>
+              <div style={{fontSize:11,color:"#555"}}>Bills vs Payments — last 7 months</div>
+            </div>
+            <div style={{display:"flex",gap:12,fontSize:11}}>
+              <span style={{display:"flex",alignItems:"center",gap:5,color:"#fb923c"}}><span style={{width:10,height:10,borderRadius:2,background:"#fb923c",display:"inline-block"}}/> Bills</span>
+              <span style={{display:"flex",alignItems:"center",gap:5,color:"#34d399"}}><span style={{width:10,height:10,borderRadius:2,background:"#34d399",display:"inline-block"}}/> Payments</span>
+            </div>
+          </div>
+          {/* Chart */}
+          <div style={{display:"flex",alignItems:"flex-end",gap:8,height:140,paddingBottom:24,position:"relative"}}>
+            {/* Y gridlines */}
+            {[0,.25,.5,.75,1].map(f=>(
+              <div key={f} style={{position:"absolute",left:0,right:0,bottom:`${f*100+17}%`,borderTop:"1px dashed #1e1e26",pointerEvents:"none"}}>
+                <span style={{fontSize:8,color:"#333",position:"absolute",left:0,top:-8}}>{fmt2(maxMonthly*f)}</span>
+              </div>
+            ))}
+            {monthlyData.map((m,i)=>(
+              <div key={i} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,position:"relative",zIndex:1}}>
+                <div style={{display:"flex",gap:2,alignItems:"flex-end",width:"100%",justifyContent:"center"}}>
+                  {/* Bills bar */}
+                  <div style={{flex:1,background:"#fb923c22",border:"1px solid #fb923c55",borderRadius:"3px 3px 0 0",
+                    height:`${Math.max((m.bills/maxMonthly)*110,m.bills>0?4:0)}px`,transition:"height .4s ease",position:"relative"}}
+                    title={`Bills: $${m.bills.toFixed(2)}`}>
+                    {m.bills > 0 && <div style={{position:"absolute",bottom:0,left:0,right:0,background:"#fb923c",borderRadius:"2px 2px 0 0",height:`${Math.min(100,30)}%`,opacity:.9}}/>}
+                  </div>
+                  {/* Payments bar */}
+                  <div style={{flex:1,background:"#34d39922",border:"1px solid #34d39955",borderRadius:"3px 3px 0 0",
+                    height:`${Math.max((m.payments/maxMonthly)*110,m.payments>0?4:0)}px`,transition:"height .4s ease",position:"relative"}}
+                    title={`Payments: $${m.payments.toFixed(2)}`}>
+                    {m.payments > 0 && <div style={{position:"absolute",bottom:0,left:0,right:0,background:"#34d399",borderRadius:"2px 2px 0 0",height:`${Math.min(100,30)}%`,opacity:.9}}/>}
+                  </div>
+                </div>
+                <div style={{fontSize:9,color:"#444",position:"absolute",bottom:0}}>{m.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Donut: Bill vs Payment ratio */}
+        <div style={{background:"#16161b",border:"1px solid #2a2a32",borderRadius:12,padding:"18px 20px"}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:14,marginBottom:4}}>Transaction Mix</div>
+          <div style={{fontSize:11,color:"#555",marginBottom:16}}>Bills vs Payments ratio</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:24}}>
+            {/* SVG Donut */}
+            <div style={{position:"relative",flexShrink:0}}>
+              <svg width="72" height="72" viewBox="0 0 72 72">
+                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#34d39933" strokeWidth="10"/>
+                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#fb923c" strokeWidth="10"
+                  strokeDasharray={`${billArc} ${circumference}`}
+                  strokeDashoffset={circumference*0.25}
+                  strokeLinecap="round" style={{transition:"stroke-dasharray .5s ease"}}/>
+                <circle cx={cx} cy={cy} r={r} fill="none" stroke="#34d399" strokeWidth="10"
+                  strokeDasharray={`${circumference*(1-billPct)} ${circumference}`}
+                  strokeDashoffset={circumference*(0.25-billPct)}
+                  strokeLinecap="round" style={{transition:"stroke-dasharray .5s ease"}}/>
+              </svg>
+              <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
+                <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:13,color:"#e8e6e1"}}>{total}</div>
+                <div style={{fontSize:8,color:"#555"}}>total</div>
+              </div>
+            </div>
+            {/* Legend */}
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {[
+                {label:"Bills",    count:billCount,    pct:Math.round(billPct*100),    col:"#fb923c"},
+                {label:"Payments", count:paymentCount, pct:Math.round((1-billPct)*100), col:"#34d399"},
+              ].map(it=>(
+                <div key={it.label}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:it.col,display:"inline-block",flexShrink:0}}/>
+                    <span style={{fontSize:11,color:"#888"}}>{it.label}</span>
+                  </div>
+                  <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:18,color:it.col}}>{it.pct}%</div>
+                  <div style={{fontSize:10,color:"#444"}}>{it.count} entries</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Currency pills */}
+          {ccyData.length > 0 && (
+            <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid #1e1e26"}}>
+              <div style={{fontSize:10,color:"#444",letterSpacing:".06em",textTransform:"uppercase",marginBottom:8}}>Currency Mix</div>
+              <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                {ccyData.map(c=>(
+                  <div key={c.code} style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:9,color:CCY_COLORS[c.code]||"#888",background:(CCY_COLORS[c.code]||"#888")+"18",border:`1px solid ${(CCY_COLORS[c.code]||"#888")}44`,padding:"1px 6px",borderRadius:3,minWidth:32,textAlign:"center",fontWeight:700}}>{c.code}</span>
+                    <div style={{flex:1,height:4,background:"#1e1e26",borderRadius:4,overflow:"hidden"}}>
+                      <div style={{width:`${(c.count/ccyTotal)*100}%`,height:"100%",background:CCY_COLORS[c.code]||"#888",borderRadius:4,transition:"width .4s"}}/>
+                    </div>
+                    <span style={{fontSize:10,color:"#555",minWidth:24,textAlign:"right"}}>{c.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Charts row 2: Per-person bars + Prepared By ── */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+
+        {/* Per-person horizontal bars */}
+        <div style={{background:"#16161b",border:"1px solid #2a2a32",borderRadius:12,padding:"18px 20px"}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:14,marginBottom:4}}>Account Breakdown</div>
+          <div style={{fontSize:11,color:"#555",marginBottom:14}}>Bills & payments per person</div>
+          {personData.length === 0 ? (
+            <div style={{textAlign:"center",padding:"30px",color:"#333",fontSize:13}}>No data for this period</div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {personData.slice(0,8).map((p,i)=>{
+                const col = PERSON_COLORS[i%PERSON_COLORS.length];
+                return (
+                  <div key={p.name}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                      <div style={{display:"flex",alignItems:"center",gap:7}}>
+                        <div style={{width:20,height:20,borderRadius:"50%",background:col,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,color:"#0f0f11",flexShrink:0}}>{p.name[0]}</div>
+                        <span style={{fontSize:11,fontWeight:600,color:col}}>{p.name}</span>
+                      </div>
+                      <div style={{display:"flex",gap:8,fontSize:10}}>
+                        <span style={{color:"#fb923c"}}>{fmt2(p.bills)}</span>
+                        <span style={{color:"#333"}}>|</span>
+                        <span style={{color:"#34d399"}}>{fmt2(p.payments)}</span>
+                      </div>
+                    </div>
+                    {/* Stacked bar */}
+                    <div style={{height:6,background:"#1e1e26",borderRadius:4,overflow:"hidden",display:"flex"}}>
+                      <div style={{width:`${(p.bills/maxPersonBills)*100}%`,background:"#fb923c88",transition:"width .4s"}}/>
+                      <div style={{width:`${(p.payments/maxPersonBills)*100}%`,background:"#34d39988",transition:"width .4s"}}/>
+                    </div>
+                    <div style={{fontSize:9,color:"#444",marginTop:2}}>{p.count} transaction{p.count!==1?"s":""} · bal <span style={{color:p.balance>=0?"#34d399":"#fb923c"}}>{fmt2(Math.abs(p.balance))}{p.balance>=0?" CR":" DR"}</span></div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Prepared By leaderboard */}
+        <div style={{background:"#16161b",border:"1px solid #2a2a32",borderRadius:12,padding:"18px 20px"}}>
+          <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:14,marginBottom:4}}>Prepared By</div>
+          <div style={{fontSize:11,color:"#555",marginBottom:14}}>Entry operators ranked by volume</div>
+          {ebData.length === 0 ? (
+            <div style={{textAlign:"center",padding:"30px",color:"#333",fontSize:13}}>No data for this period</div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {ebData.map((eb,i)=>{
+                const col = ["#a78bfa","#fb923c","#34d399","#f472b6","#60a5fa","#facc15"][i%6];
+                const maxCount = ebData[0].count || 1;
+                return (
+                  <div key={eb.name} style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{width:20,height:20,borderRadius:4,background:col+"22",border:`1px solid ${col}55`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,color:col,flexShrink:0}}>{i+1}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+                        <span style={{fontSize:11,fontWeight:600,color:col}}>{eb.name}</span>
+                        <span style={{fontSize:10,color:"#555"}}>{eb.count} entries</span>
+                      </div>
+                      <div style={{height:5,background:"#1e1e26",borderRadius:3,overflow:"hidden"}}>
+                        <div style={{width:`${(eb.count/maxCount)*100}%`,height:"100%",background:col,borderRadius:3,transition:"width .4s"}}/>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Activity sparkline - recent 14 days */}
+          {entries.length > 0 && (
+            <div style={{marginTop:16,paddingTop:14,borderTop:"1px solid #1e1e26"}}>
+              <div style={{fontSize:10,color:"#444",letterSpacing:".06em",textTransform:"uppercase",marginBottom:8}}>Daily Activity — Last 14 Days</div>
+              <div style={{display:"flex",alignItems:"flex-end",gap:3,height:28}}>
+                {Array.from({length:14},(_,i)=>{
+                  const d = new Date(now); d.setDate(d.getDate()-13+i);
+                  const ds = d.toISOString().slice(0,10);
+                  const c = base.filter(e=>(e.createdAt||"").slice(0,10)===ds).length;
+                  const max14 = Math.max(...Array.from({length:14},(_,j)=>{
+                    const dd=new Date(now); dd.setDate(dd.getDate()-13+j);
+                    return base.filter(e=>(e.createdAt||"").slice(0,10)===dd.toISOString().slice(0,10)).length;
+                  }),1);
+                  return (
+                    <div key={i} title={`${ds}: ${c} tx`}
+                      style={{flex:1,height:`${Math.max((c/max14)*100,c>0?15:8)}%`,background:c>0?"#5b5bf6":"#1e1e26",borderRadius:"2px 2px 0 0",transition:"height .3s",cursor:"default",minHeight:2}}/>
+                  );
+                })}
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:3}}>
+                <span style={{fontSize:8,color:"#333"}}>14 days ago</span>
+                <span style={{fontSize:8,color:"#333"}}>Today</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+
+    </div>
+  );
+}
+
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 function App() {
   const [entries, setEntries]         = useState([]);
@@ -1412,13 +1834,14 @@ function App() {
   const [submitted, setSubmitted]     = useState(false);
   const [submittedPending, setSubmittedPending] = useState(false);
   const [editId, setEditId]           = useState(null);
-  const [view, setView]               = useState("dashboard");
+  const [view, setView]               = useState("analytics");
   const [showAddPerson, setShowAddPerson] = useState(false);
   const [newPersonName, setNewPersonName] = useState("");
   const [newPersonError, setNewPersonError] = useState("");
   const [filterName, setFilterName]   = useState("ALL");
   const [sheetSearch, setSheetSearch]  = useState("");
   const [showPdfModal, setShowPdfModal] = useState(false);
+  const [pdfSearch, setPdfSearch]       = useState("");
   const [authUser, setAuthUser]         = useState(null); // null = not logged in
   const [loginForm, setLoginForm]       = useState({ username:"", password:"" });
   const [loginError, setLoginError]     = useState("");
@@ -1819,9 +2242,9 @@ function App() {
           <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:17, letterSpacing:"-.02em", color:"#fff" }}>Paragon</span>
         </div>
         <nav className="paragon-nav" style={{ display:"flex", gap:4 }}>
-          {["dashboard","account","form","pending","sheet"].filter(v => v !== "sheet" || authUser === "ADMIN").map(v => (
+          {["analytics","dashboard","account","form","pending","sheet"].filter(v => v !== "sheet" || authUser === "ADMIN").map(v => (
             <button key={v} className={`nav-btn ${view===v?"active":""}`} onClick={()=>setView(v)}>
-              {v==="dashboard"?"🏠 Home":v==="account"?"👤 Account":v==="form"?"✏️ Entry":
+              {v==="dashboard"?"🏠 Overview":v==="analytics"?"🏠 Home":v==="account"?"👤 Account":v==="form"?"✏️ Entry":
                v==="pending"?(
                 <span style={{display:"flex",alignItems:"center",gap:6}}>
                   📋 Status
@@ -1863,6 +2286,11 @@ function App() {
             onViewSheet={()=>setView("sheet")}
             onNewEntry={handleNew}
           />
+        )}
+
+        {/* ── ANALYTICS ── */}
+        {view==="analytics" && (
+          <AnalyticsView entries={entries} people={people} />
         )}
 
         {/* ── ACCOUNT DETAIL ── */}
@@ -2282,37 +2710,61 @@ function App() {
 
       {/* ── PDF MODAL ── */}
       {showPdfModal&&(
-        <div className="modal-overlay" onClick={()=>setShowPdfModal(false)}>
-          <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-overlay" onClick={()=>{setShowPdfModal(false);setPdfSearch("");}}>
+          <div className="modal" onClick={e=>e.stopPropagation()} style={{maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
             <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:6 }}>
               <div style={{ width:32, height:32, background:"#1a1a2e", border:"1px solid #3a3a5e", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center" }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
               </div>
               <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:20 }}>Print PDF Report</h2>
             </div>
-            <p style={{ color:"#555", fontSize:13, marginBottom:20 }}>Select a person to generate their full account statement.</p>
-            <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-              {people.map((p,i)=>{
-                const s = perPersonStats.find(x=>x.name===p);
-                const dc = entries.filter(e=>e.name===p).reduce((t,e)=>t+(e.docs?.length||0),0);
-                return (
-                  <div key={p} className="pdf-card" onClick={()=>{generatePDF(p,entries,people);setShowPdfModal(false);}}>
-                    <div style={{ display:"flex", alignItems:"center", gap:12 }}>
-                      <div style={{ width:36, height:36, borderRadius:"50%", background:AVATAR_COLORS[i%AVATAR_COLORS.length], display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:14, color:"#fff" }}>{p[0]}</div>
-                      <div>
-                        <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:15 }}>Account of {p}</div>
-                        <div style={{ fontSize:12, color:"#555", marginTop:2 }}>{entries.filter(e=>e.name===p).length} transactions{dc>0&&<span style={{color:"#a5b4fc",marginLeft:6}}>· 📎{dc}</span>}</div>
+            <p style={{ color:"#555", fontSize:13, marginBottom:14 }}>Select a person to generate their full account statement.</p>
+            {/* Search box */}
+            <div style={{position:"relative",marginBottom:14}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",pointerEvents:"none"}}>
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                autoFocus
+                value={pdfSearch}
+                onChange={e=>setPdfSearch(e.target.value)}
+                placeholder="Search account…"
+                style={{width:"100%",background:"#1e1e26",border:"1px solid #3a3a5e",borderRadius:8,padding:"10px 36px 10px 34px",color:"#e8e6e1",fontSize:13,fontFamily:"'DM Mono',monospace",outline:"none"}}
+                onFocus={e=>e.target.style.borderColor="#5b5bf6"}
+                onBlur={e=>e.target.style.borderColor="#3a3a5e"}
+              />
+              {pdfSearch&&(
+                <button onClick={()=>setPdfSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#555",cursor:"pointer",fontSize:18,padding:0,lineHeight:1}}>×</button>
+              )}
+            </div>
+            {/* Account list */}
+            <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:8}}>
+              {people.filter(p=>p.toLowerCase().includes(pdfSearch.trim().toLowerCase())).length === 0 ? (
+                <div style={{textAlign:"center",padding:"30px",color:"#444",fontSize:13}}>No accounts match "<span style={{color:"#a5b4fc"}}>{pdfSearch}</span>"</div>
+              ) : (
+                people.filter(p=>p.toLowerCase().includes(pdfSearch.trim().toLowerCase())).map((p,i)=>{
+                  const realIdx = people.indexOf(p);
+                  const s = perPersonStats.find(x=>x.name===p);
+                  const dc = entries.filter(e=>e.name===p).reduce((t,e)=>t+(e.docs?.length||0),0);
+                  return (
+                    <div key={p} className="pdf-card" onClick={()=>{generatePDF(p,entries,people);setShowPdfModal(false);setPdfSearch("");}}>
+                      <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+                        <div style={{ width:36, height:36, borderRadius:"50%", background:AVATAR_COLORS[realIdx%AVATAR_COLORS.length], display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:14, color:"#fff", flexShrink:0 }}>{p[0]}</div>
+                        <div>
+                          <div style={{ fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:15 }}>Account of {p}</div>
+                          <div style={{ fontSize:12, color:"#555", marginTop:2 }}>{entries.filter(e=>e.name===p).length} transactions{dc>0&&<span style={{color:"#a5b4fc",marginLeft:6}}>· 📎{dc}</span>}</div>
+                        </div>
+                      </div>
+                      <div style={{ textAlign:"right" }}>
+                        <div style={{ fontSize:11, color:"#555", marginBottom:2 }}>Balance</div>
+                        <div className={s.balance>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:15 }}>{fmt(s.balance)}</div>
                       </div>
                     </div>
-                    <div style={{ textAlign:"right" }}>
-                      <div style={{ fontSize:11, color:"#555", marginBottom:2 }}>Balance</div>
-                      <div className={s.balance>=0?"balance-pos":"balance-neg"} style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:15 }}>{fmt(s.balance)}</div>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
-            <button className="btn-ghost" style={{ width:"100%", marginTop:18, padding:"10px" }} onClick={()=>setShowPdfModal(false)}>Cancel</button>
+            <button className="btn-ghost" style={{ width:"100%", marginTop:14, padding:"10px", flexShrink:0 }} onClick={()=>{setShowPdfModal(false);setPdfSearch("");}}>Cancel</button>
           </div>
         </div>
       )}
