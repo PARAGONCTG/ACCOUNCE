@@ -210,9 +210,9 @@ table{border-collapse:collapse;width:100%}
 
   <!-- Transactions -->
   <div style="border:1.5px solid #000;border-radius:6px;overflow:hidden;margin-bottom:20px">
-    <div style="background:#000;padding:9px 12px;display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:11px;font-weight:700;color:#fff;letter-spacing:.05em;text-transform:uppercase">Transaction History</span>
-      <span style="font-size:10px;color:#ccc">${pe.length} records</span>
+    <div style="background:#f0f0f0;padding:9px 12px;display:flex;justify-content:space-between;align-items:center;border-bottom:1.5px solid #000">
+      <span style="font-size:11px;font-weight:700;color:#000;letter-spacing:.05em;text-transform:uppercase">Transaction History</span>
+      <span style="font-size:10px;color:#555">${pe.length} records</span>
     </div>
     <table>
       <thead>
@@ -250,6 +250,220 @@ table{border-collapse:collapse;width:100%}
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+// ── PAYMENT SLIP PDF ──────────────────────────────────────────────────────────
+function generatePaymentSlipPDF(entry) {
+  const today = new Date().toLocaleDateString("en-GB", { year:"numeric", month:"long", day:"numeric" });
+  const txDate = entry.createdAt
+    ? new Date(entry.createdAt).toLocaleDateString("en-GB", { day:"2-digit", month:"long", year:"numeric" })
+    : today;
+  const cur = getCurrency(entry.currency || "USD");
+  const amountFmt = fmtC(entry.amount, entry.currency || "USD");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+<title>Payment Slip — ${entry.txnId}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"><\/script>
+<script>
+function downloadPDF() {
+  var btn = document.getElementById('dl-btn');
+  document.querySelectorAll('.no-print').forEach(function(el){ el.style.display='none'; });
+  if(btn) btn.disabled = true;
+  html2pdf().set({
+    margin:[14,14,14,14],
+    filename:'PaymentSlip-${entry.txnId}.pdf',
+    image:{type:'jpeg',quality:0.98},
+    html2canvas:{scale:2,useCORS:true},
+    jsPDF:{unit:'mm',format:'a5',orientation:'portrait'}
+  }).from(document.getElementById('slip')).save().then(function(){
+    document.querySelectorAll('.no-print').forEach(function(el){ el.style.display=''; });
+    if(btn) btn.disabled = false;
+  });
+}
+<\/script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f4f4f6;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+@page{margin:14mm;size:A5 portrait}
+@media print{.no-print{display:none!important}body{background:#fff;padding:0}}
+</style></head><body>
+<div style="max-width:480px;width:100%;margin:0 auto">
+  <!-- Actions -->
+  <div class="no-print" style="display:flex;justify-content:flex-end;gap:10px;margin-bottom:16px">
+    <button onclick="window.print()" style="background:#fff;color:#000;border:2px solid #000;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🖨️ Print</button>
+    <button onclick="downloadPDF()" id="dl-btn" style="background:#000;color:#fff;border:2px solid #000;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">⬇ Download PDF</button>
+  </div>
+
+  <div id="slip" style="background:#fff;border:2px solid #000;border-radius:10px;overflow:hidden">
+    <!-- Header band -->
+    <div style="background:#fff;border-bottom:2px solid #000;padding:20px 24px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:.12em;color:#555;text-transform:uppercase;margin-bottom:4px">Payment Receipt</div>
+        <div style="font-size:22px;font-weight:800;color:#000;letter-spacing:-.02em">PARAGON</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:9px;color:#555;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px">Transaction ID</div>
+        <div style="font-size:14px;font-weight:800;color:#000;font-family:monospace">${entry.txnId}</div>
+      </div>
+    </div>
+
+    <!-- Amount hero -->
+    <div style="background:#f8f8f8;border-bottom:1.5px solid #e0e0e0;padding:22px 24px;text-align:center">
+      <div style="font-size:10px;font-weight:700;color:#888;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">Amount Paid</div>
+      <div style="font-size:36px;font-weight:800;color:#000;letter-spacing:-.02em">${amountFmt}</div>
+      <div style="display:inline-block;margin-top:8px;font-size:10px;font-weight:700;color:#000;background:#e8e8e8;border:1.5px solid #000;padding:3px 12px;border-radius:20px;letter-spacing:.06em">${entry.currency || "USD"} · PAYMENT</div>
+    </div>
+
+    <!-- Details grid -->
+    <div style="padding:20px 24px">
+      <table style="width:100%;border-collapse:collapse">
+        <tbody>
+          ${[
+            ["Account Name", entry.name],
+            ["Payment Date", txDate],
+            ["Source / Ref", entry.source || "—"],
+            ["Prepared By", entry.entryBy || "—"],
+          ].map(([label, value]) => `
+          <tr style="border-bottom:1px solid #f0f0f0">
+            <td style="padding:10px 0;font-size:11px;font-weight:600;color:#888;width:40%;text-transform:uppercase;letter-spacing:.05em">${label}</td>
+            <td style="padding:10px 0;font-size:13px;font-weight:700;color:#000;text-align:right">${value}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Stamp / footer -->
+    <div style="background:#f8f8f8;border-top:1.5px dashed #ccc;padding:14px 24px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:10px;color:#999">Paragon Account System</div>
+      <div style="font-size:10px;color:#999">Printed: ${today}</div>
+    </div>
+
+    <!-- Validity watermark row -->
+    <div style="padding:10px 24px;text-align:center;border-top:1px solid #eee">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.1em;color:#bbb;text-transform:uppercase">This slip is a record of payment — not a tax document</span>
+    </div>
+  </div>
+</div>
+</body></html>`;
+
+  const blob = new Blob([html], { type:"text/html" });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, "_blank");
+  if (!win) {
+    const a = document.createElement("a");
+    a.href = url; a.download = `PaymentSlip-${entry.txnId}.html`; a.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// ── BILL SLIP PDF ─────────────────────────────────────────────────────────────
+function generateBillSlipPDF(entry) {
+  const today = new Date().toLocaleDateString("en-GB", { year:"numeric", month:"long", day:"numeric" });
+  const txDate = entry.createdAt
+    ? new Date(entry.createdAt).toLocaleDateString("en-GB", { day:"2-digit", month:"long", year:"numeric" })
+    : today;
+  const amountFmt = fmtC(entry.amount, entry.currency || "USD");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+<title>Bill Slip — ${entry.txnId}</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"><\/script>
+<script>
+function downloadPDF() {
+  var btn = document.getElementById('dl-btn');
+  document.querySelectorAll('.no-print').forEach(function(el){ el.style.display='none'; });
+  if(btn) btn.disabled = true;
+  html2pdf().set({
+    margin:[14,14,14,14],
+    filename:'BillSlip-${entry.txnId}.pdf',
+    image:{type:'jpeg',quality:0.98},
+    html2canvas:{scale:2,useCORS:true},
+    jsPDF:{unit:'mm',format:'a5',orientation:'portrait'}
+  }).from(document.getElementById('slip')).save().then(function(){
+    document.querySelectorAll('.no-print').forEach(function(el){ el.style.display=''; });
+    if(btn) btn.disabled = false;
+  });
+}
+<\/script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f4f4f6;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+@page{margin:14mm;size:A5 portrait}
+@media print{.no-print{display:none!important}body{background:#fff;padding:0}}
+</style></head><body>
+<div style="max-width:480px;width:100%;margin:0 auto">
+  <div class="no-print" style="display:flex;justify-content:flex-end;gap:10px;margin-bottom:16px">
+    <button onclick="window.print()" style="background:#fff;color:#000;border:2px solid #000;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🖨️ Print</button>
+    <button onclick="downloadPDF()" id="dl-btn" style="background:#000;color:#fff;border:2px solid #000;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">⬇ Download PDF</button>
+  </div>
+
+  <div id="slip" style="background:#fff;border:2px solid #000;border-radius:10px;overflow:hidden">
+    <!-- Header -->
+    <div style="background:#fff;border-bottom:2px solid #000;padding:20px 24px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:.12em;color:#555;text-transform:uppercase;margin-bottom:4px">Bill Receipt</div>
+        <div style="font-size:22px;font-weight:800;color:#000;letter-spacing:-.02em">PARAGON</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:9px;color:#555;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px">Transaction ID</div>
+        <div style="font-size:14px;font-weight:800;color:#000;font-family:monospace">${entry.txnId}</div>
+      </div>
+    </div>
+
+    <!-- Amount hero -->
+    <div style="background:#f8f8f8;border-bottom:1.5px solid #e0e0e0;padding:22px 24px;text-align:center">
+      <div style="font-size:10px;font-weight:700;color:#888;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">Bill Amount</div>
+      <div style="font-size:36px;font-weight:800;color:#000;letter-spacing:-.02em">${amountFmt}</div>
+      <div style="display:inline-block;margin-top:8px;font-size:10px;font-weight:700;color:#000;background:#e8e8e8;border:1.5px solid #000;padding:3px 12px;border-radius:20px;letter-spacing:.06em">${entry.currency || "USD"} · BILL</div>
+    </div>
+
+    <!-- Details grid -->
+    <div style="padding:20px 24px">
+      <table style="width:100%;border-collapse:collapse">
+        <tbody>
+          ${[
+            ["Account Name", entry.name],
+            ["Bill Date",    txDate],
+            ["Source / Ref", entry.source || "—"],
+            ["Prepared By",  entry.entryBy || "—"],
+          ].map(([label, value]) => `
+          <tr style="border-bottom:1px solid #f0f0f0">
+            <td style="padding:10px 0;font-size:11px;font-weight:600;color:#888;width:40%;text-transform:uppercase;letter-spacing:.05em">${label}</td>
+            <td style="padding:10px 0;font-size:13px;font-weight:700;color:#000;text-align:right">${value}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Approval notice -->
+    <div style="margin:0 24px 20px 24px;background:#f0fff8;border:1.5px solid #34d399;border-radius:8px;padding:14px 16px;display:flex;align-items:flex-start;gap:12px">
+      <div style="font-size:20px;line-height:1;flex-shrink:0">✅</div>
+      <div>
+        <div style="font-size:11px;font-weight:800;color:#065f46;letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px">Accepted by Paragon Authority</div>
+        <div style="font-size:11px;color:#047857;line-height:1.5">This bill has been reviewed and accepted by the Paragon account authority. The amount is duly recorded in the account system.</div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#f8f8f8;border-top:1.5px dashed #ccc;padding:14px 24px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:10px;color:#999">Paragon Account System</div>
+      <div style="font-size:10px;color:#999">Printed: ${today}</div>
+    </div>
+    <div style="padding:10px 24px;text-align:center;border-top:1px solid #eee">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.1em;color:#bbb;text-transform:uppercase">This slip is a record of bill — not a tax document</span>
+    </div>
+  </div>
+</div>
+</body></html>`;
+
+  const blob = new Blob([html], { type:"text/html" });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, "_blank");
+  if (!win) {
+    const a = document.createElement("a");
+    a.href = url; a.download = `BillSlip-${entry.txnId}.html`; a.click();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
 
 // ── FILE ICON ─────────────────────────────────────────────────────────────────
 function FileIcon({ type }) {
@@ -903,10 +1117,10 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
 
       {/* Table */}
       <div className="sheet-scroll" style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
-        <div style={{ minWidth:900 }}>
+        <div style={{ minWidth:980 }}>
           {/* Header */}
-          <div style={{ display:"grid", gridTemplateColumns:"120px 130px 90px 150px 160px 170px 55px", padding:"10px 20px", background:"#12121a", borderBottom:"1px solid #2a2a32" }}>
-            {["SUB. ID","DATE","TYPE","DETAILS","AMOUNT","BALANCE","DOCS"].map((h,i) => (
+          <div style={{ display:"grid", gridTemplateColumns:"120px 130px 90px 150px 160px 170px 55px 80px", padding:"10px 20px", background:"#12121a", borderBottom:"1px solid #2a2a32" }}>
+            {["SUB. ID","DATE","TYPE","DETAILS","AMOUNT","BALANCE","DOCS","SLIP"].map((h,i) => (
               <span key={i} style={{ fontSize:10, color: i===0?"#a5b4fc":i===1?"#f59e0b":"#555", letterSpacing:".08em", fontWeight:500 }}>{h}</span>
             ))}
           </div>
@@ -919,7 +1133,7 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
             runningByCurrency[cur] += e.type === "Payment" ? e.amount : -e.amount;
             const bal = runningByCurrency[cur];
             return (
-              <div key={e.id} className="sheet-row" style={{ display:"grid", gridTemplateColumns:"120px 130px 90px 150px 160px 170px 55px", padding:"11px 20px", borderBottom:i<acctEntries.length-1?"1px solid #1e1e26":"none", alignItems:"center" }}>
+              <div key={e.id} className="sheet-row" style={{ display:"grid", gridTemplateColumns:"120px 130px 90px 150px 160px 170px 55px 80px", padding:"11px 20px", borderBottom:i<acctEntries.length-1?"1px solid #1e1e26":"none", alignItems:"center" }}>
                 <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:"#a5b4fc", background:"#1a1a2e", border:"1px solid #3a3a5e", padding:"3px 7px", borderRadius:5, display:"inline-block" }}>{e.txnId||"—"}</span>
                 <div>
                   {e.createdAt ? (
@@ -942,11 +1156,20 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
                     ? <span className="doc-badge" onClick={()=>setPreviewDocs({docs:e.docs,idx:0})} title="Click to view attachments">📎 {e.docs.length}</span>
                     : <span style={{color:"#333",fontSize:11}}>—</span>}
                 </div>
+                <div>
+                  <button
+                    onClick={() => e.type === "Payment" ? generatePaymentSlipPDF(e) : generateBillSlipPDF(e)}
+                    style={{ background: e.type==="Payment" ? "#0a2420" : "#1e1a0a", border:`1px solid ${e.type==="Payment"?"#0f4a3a":"#5a4000"}`, color: e.type==="Payment" ? "#34d399" : "#f59e0b", fontFamily:"'DM Mono',monospace", fontSize:10, fontWeight:600, padding:"4px 8px", borderRadius:5, cursor:"pointer", display:"flex", alignItems:"center", gap:4, whiteSpace:"nowrap" }}
+                    title={`Download ${e.type} slip`}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14,2 14,8 20,8"/></svg>
+                    Slip
+                  </button>
+                </div>
               </div>
             );
           })}
           {acctEntries.length > 0 && (
-            <div style={{ display:"grid", gridTemplateColumns:"120px 130px 90px 150px 160px 170px 55px", padding:"12px 20px", borderTop:"1px solid #2a2a32", background:"#12121a" }}>
+            <div style={{ display:"grid", gridTemplateColumns:"120px 130px 90px 150px 160px 170px 55px 80px", padding:"12px 20px", borderTop:"1px solid #2a2a32", background:"#12121a" }}>
               <span/><span/><span/>
               <span style={{ fontSize:11, color:"#888", fontWeight:600 }}>TOTAL</span>
               <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:13, color:"#e8e6e1" }}>{fmt(bills+payments)}</span>
@@ -1046,13 +1269,7 @@ function RequestHistoryView({ pendingEntries, requestHistory, people, entryByLis
           <h1 style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:26,letterSpacing:"-.03em",marginBottom:4}}>Request History</h1>
           <p style={{color:"#666",fontSize:13}}>All bill submissions — view only · only admin can act</p>
         </div>
-        {(approvedCount > 0 || rejectedCount > 0) && (
-          <button onClick={handleClearHistory}
-            style={{display:"flex",alignItems:"center",gap:7,background:"#2a0f0f",border:"1.5px solid #5c1a1a",color:"#fb923c",fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:600,padding:"9px 16px",borderRadius:8,cursor:"pointer"}}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg>
-            Clear History
-          </button>
-        )}
+
       </div>
 
       {/* Status filter tabs */}
@@ -1299,6 +1516,8 @@ function App() {
         // Payment → goes directly to entries
         const newEntry = { id: nextId++, txnId: makeTxnId(nextTxnNum++), ...row };
         entriesCol().add(newEntry);
+        // Auto-open payment slip PDF
+        generatePaymentSlipPDF(newEntry);
       }
     }
     setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", currency:"USD", docs:[], txDate: new Date().toISOString().slice(0,10) });
