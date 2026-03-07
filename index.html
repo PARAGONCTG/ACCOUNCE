@@ -25,6 +25,8 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
     const entriesCol  = () => db.collection("entries");
+    const pendingCol  = () => db.collection("pending");
+    const historyCol  = () => db.collection("requestHistory");
     const peopleCol   = () => db.collection("config").doc("people");
     const entryByCol  = () => db.collection("config").doc("entryBy");
   </script>
@@ -1013,15 +1015,176 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
 }
 
 
+// ── REQUEST HISTORY VIEW ──────────────────────────────────────────────────────
+function RequestHistoryView({ pendingEntries, requestHistory, people, entryByList, handleClearHistory }) {
+  const [statusFilter, setStatusFilter] = useState("pending");
+
+  const allRequests = [
+    ...pendingEntries.map(e => ({...e, status:"pending"})),
+    ...requestHistory
+  ];
+  const filtered = statusFilter === "all" ? allRequests : allRequests.filter(r => r.status === statusFilter);
+  const pendingCount  = pendingEntries.length;
+  const approvedCount = requestHistory.filter(r=>r.status==="approved").length;
+  const rejectedCount = requestHistory.filter(r=>r.status==="rejected").length;
+
+  const StatusBadge = ({status}) => {
+    const cfg = {
+      pending:  { bg:"#1e1600", border:"#5a3d00", color:"#f59e0b", dot:"#f59e0b", label:"Pending"  },
+      approved: { bg:"#0a2018", border:"#0f4a2a", color:"#34d399", dot:"#34d399", label:"Approved" },
+      rejected: { bg:"#2a0f0f", border:"#5c1a1a", color:"#fb923c", dot:"#fb923c", label:"Rejected" },
+    }[status] || { bg:"#1e1e26", border:"#2e2e3a", color:"#888", dot:"#888", label:status };
+    return (
+      <span style={{display:"inline-flex",alignItems:"center",gap:5,background:cfg.bg,border:`1px solid ${cfg.border}`,borderRadius:20,padding:"3px 10px",fontSize:11,color:cfg.color,fontWeight:600,whiteSpace:"nowrap"}}>
+        <span style={{width:6,height:6,borderRadius:"50%",background:cfg.dot,display:"inline-block",boxShadow:`0 0 4px ${cfg.dot}`}}/>
+        {cfg.label}
+      </span>
+    );
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",marginBottom:22,flexWrap:"wrap",gap:12}}>
+        <div>
+          <h1 style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:26,letterSpacing:"-.03em",marginBottom:4}}>Request History</h1>
+          <p style={{color:"#666",fontSize:13}}>All bill submissions — view only · only admin can act</p>
+        </div>
+        {(approvedCount > 0 || rejectedCount > 0) && (
+          <button onClick={handleClearHistory}
+            style={{display:"flex",alignItems:"center",gap:7,background:"#2a0f0f",border:"1.5px solid #5c1a1a",color:"#fb923c",fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:600,padding:"9px 16px",borderRadius:8,cursor:"pointer"}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/><path d="M9,6V4a1,1,0,0,1,1-1h4a1,1,0,0,1,1,1v2"/></svg>
+            Clear History
+          </button>
+        )}
+      </div>
+
+      {/* Status filter tabs */}
+      <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+        {[
+          {key:"all",      label:"All",      count:allRequests.length, col:"#888"},
+          {key:"pending",  label:"Pending",  count:pendingCount,       col:"#f59e0b"},
+          {key:"approved", label:"Approved", count:approvedCount,      col:"#34d399"},
+          {key:"rejected", label:"Rejected", count:rejectedCount,      col:"#fb923c"},
+        ].map(t=>(
+          <button key={t.key} onClick={()=>setStatusFilter(t.key)}
+            style={{display:"flex",alignItems:"center",gap:7,padding:"7px 16px",borderRadius:20,fontFamily:"'DM Mono',monospace",fontSize:12,cursor:"pointer",border:`1.5px solid ${statusFilter===t.key?t.col:"#2a2a32"}`,background:statusFilter===t.key?`${t.col}18`:"transparent",color:statusFilter===t.key?t.col:"#666",transition:"all .15s",fontWeight:statusFilter===t.key?700:400}}>
+            {t.label}
+            <span style={{background:statusFilter===t.key?t.col:"#2a2a32",color:statusFilter===t.key?"#0f0f11":"#555",borderRadius:20,fontSize:10,fontWeight:900,padding:"1px 7px",minWidth:20,textAlign:"center"}}>{t.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Info banner */}
+      <div style={{display:"flex",alignItems:"center",gap:10,background:"#141414",border:"1px solid #2a2a32",borderRadius:10,padding:"10px 16px",marginBottom:18,fontSize:12}}>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5b5bf6" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span style={{color:"#666"}}><strong style={{color:"#a5b4fc"}}>Read-only</strong> view for team members. Only the admin can approve or reject entries.</span>
+      </div>
+
+      {/* Empty state */}
+      {filtered.length === 0 && (
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 20px",background:"#16161b",border:"1px solid #2a2a32",borderRadius:14,textAlign:"center"}}>
+          <div style={{fontSize:36,marginBottom:14}}>{statusFilter==="pending"?"🕐":statusFilter==="approved"?"✅":statusFilter==="rejected"?"✗":"📋"}</div>
+          <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:17,color:"#555",marginBottom:6}}>No {statusFilter==="all"?"":statusFilter} requests</div>
+          <div style={{fontSize:12,color:"#444"}}>Nothing to show here yet.</div>
+        </div>
+      )}
+
+      {/* Table */}
+      {filtered.length > 0 && (
+        <div style={{background:"#16161b",border:"1px solid #2a2a32",borderRadius:12,overflow:"hidden"}}>
+          {/* Scrollable wrapper */}
+          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+          <div style={{minWidth:920}}>
+          {/* Table header */}
+          <div style={{display:"grid",gridTemplateColumns:"130px 120px 120px 130px 100px 130px 160px 150px",padding:"11px 18px",background:"#12121a",borderBottom:"1px solid #2a2a32"}}>
+            {["SUB. ID","STATUS","DATE","ACCOUNT","TYPE","AMOUNT","DETAILS","PREPARED BY"].map((h,i)=>(
+              <span key={i} style={{fontSize:10,color:i===0?"#a5b4fc":i===1?"#f59e0b":"#555",letterSpacing:".08em",fontWeight:600,textTransform:"uppercase"}}>{h}</span>
+            ))}
+          </div>
+          {/* Rows */}
+          {filtered.map((r, i) => {
+            const pIdx = people.indexOf(r.name);
+            const eIdx = entryByList.indexOf(r.entryBy);
+            const aColor = AVATAR_COLORS[pIdx>=0?pIdx%AVATAR_COLORS.length:0];
+            const eColor = EB_COLORS[eIdx>=0?eIdx%EB_COLORS.length:0];
+            const rowBg = r.status==="approved" ? "#0a160f" : r.status==="rejected" ? "#160a0a" : "#0f0f11";
+            const actionLabel = r.status==="approved"
+              ? `Approved by ${r.approvedBy||"admin"} · ${r.approvedAt?new Date(r.approvedAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):""}`
+              : r.status==="rejected"
+              ? `Rejected by ${r.rejectedBy||"admin"} · ${r.rejectedAt?new Date(r.rejectedAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):""}`
+              : null;
+            return (
+              <div key={r._fireId||i}>
+                <div className="sheet-row" style={{display:"grid",gridTemplateColumns:"130px 120px 120px 130px 100px 130px 160px 150px",padding:"12px 18px",borderBottom:"1px solid #1e1e26",alignItems:"center",background:rowBg}}>
+                  <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:700,color:"#a5b4fc",background:"#1a1a2e",border:"1px solid #3a3a5e",padding:"3px 7px",borderRadius:5,display:"inline-block"}}>{r.txnId||"—"}</span>
+                  <div><StatusBadge status={r.status}/></div>
+                  <div style={{fontSize:11,color:"#888"}}>{r.submittedAt?new Date(r.submittedAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):"—"}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:7}}>
+                    <div style={{width:22,height:22,borderRadius:"50%",background:aColor,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:900,color:"#fff",flexShrink:0}}>{r.name?.[0]}</div>
+                    <span style={{fontSize:12,fontWeight:600,color:aColor}}>{r.name}</span>
+                  </div>
+                  <span className="tag tag-bill" style={{fontSize:10}}>Bill</span>
+                  <div>
+                    <span style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:13,color:"#fb923c"}}>{fmtC(r.amount,r.currency||"USD")}</span>
+                    {r.currency&&r.currency!=="USD"&&<div style={{fontSize:9,color:"#5b5bf6",background:"#1e1e3a",border:"1px solid #3a3a5e",padding:"1px 4px",borderRadius:3,marginTop:2,display:"inline-block",marginLeft:4}}>{r.currency}</div>}
+                  </div>
+                  <span style={{fontSize:11,color:"#777",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.source||<span style={{color:"#333"}}>—</span>}</span>
+                  {r.entryBy?(
+                    <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 8px",borderRadius:20,fontSize:11,fontWeight:500,background:`${eColor}15`,border:`1px solid ${eColor}35`,color:eColor}}>
+                      <span style={{width:14,height:14,borderRadius:"50%",background:eColor,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:8,color:"#0f0f11",fontWeight:900}}>{r.entryBy[0]}</span>
+                      {r.entryBy}
+                    </span>
+                  ):<span style={{color:"#333",fontSize:11}}>—</span>}
+                </div>
+                {actionLabel&&(
+                  <div style={{padding:"4px 18px 7px",background:rowBg,borderBottom:"1px solid #1e1e26",display:"flex",alignItems:"center",gap:6}}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={r.status==="approved"?"#34d399":"#fb923c"} strokeWidth="2">
+                      {r.status==="approved"?<polyline points="20,6 9,17 4,12"/>:<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>}
+                    </svg>
+                    <span style={{fontSize:10,color:r.status==="approved"?"#34d399":"#fb923c",opacity:.75}}>{actionLabel}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          </div>
+          </div>
+        </div>
+      )}
+
+      {/* Summary footer */}
+      {filtered.length > 0 && (
+        <div style={{marginTop:14,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap",padding:"12px 16px",background:"#12121a",border:"1px solid #2a2a32",borderRadius:10}}>
+          <span style={{fontSize:11,color:"#555",textTransform:"uppercase",letterSpacing:".06em"}}>Showing</span>
+          <span style={{fontSize:13,color:"#888"}}><strong style={{color:"#e8e6e1"}}>{filtered.length}</strong> request{filtered.length!==1?"s":""}</span>
+          <div style={{width:1,height:16,background:"#2a2a32"}}/>
+          <span style={{fontSize:12,color:"#f59e0b"}}>🕐 {pendingCount} pending</span>
+          <span style={{fontSize:12,color:"#34d399"}}>✅ {approvedCount} approved</span>
+          <span style={{fontSize:12,color:"#fb923c"}}>✗ {rejectedCount} rejected</span>
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#333"}}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            View only
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 function App() {
   const [entries, setEntries]         = useState([]);
+  const [pendingEntries, setPendingEntries] = useState([]);
+  const [requestHistory, setRequestHistory] = useState([]);
   const [people, setPeople]           = useState(DEFAULT_PEOPLE);
   const [dbLoading, setDbLoading]      = useState(true);
   const [entryByList, setEntryByList] = useState(DEFAULT_ENTRY_BY);
   const [form, setForm]               = useState({ name:"", type:"Bill", amount:"", source:"", entryBy:"", currency:"USD", docs:[], txDate: new Date().toISOString().slice(0,10) });
   const [errors, setErrors]           = useState({});
   const [submitted, setSubmitted]     = useState(false);
+  const [submittedPending, setSubmittedPending] = useState(false);
   const [editId, setEditId]           = useState(null);
   const [view, setView]               = useState("dashboard");
   const [showAddPerson, setShowAddPerson] = useState(false);
@@ -1050,7 +1213,17 @@ function App() {
       setEntries(data);
       setDbLoading(false);
     }, () => setDbLoading(false));
-    return () => unsub();
+    // Real-time listener for pending entries
+    const unsubPending = pendingCol().orderBy("submittedAt", "asc").onSnapshot(snap => {
+      const data = snap.docs.map(d => ({ ...d.data(), _fireId: d.id }));
+      setPendingEntries(data);
+    }, () => {});
+    // Real-time listener for request history (approved/rejected)
+    const unsubHistory = historyCol().orderBy("submittedAt", "desc").onSnapshot(snap => {
+      const data = snap.docs.map(d => ({ ...d.data(), _fireId: d.id }));
+      setRequestHistory(data);
+    }, () => {});
+    return () => { unsub(); unsubPending(); unsubHistory(); };
   }, []);
 
   // Save people to Firebase whenever it changes
@@ -1104,9 +1277,20 @@ function App() {
       }
       setEditId(null);
     } else {
-      // add to Firebase
-      const newEntry = { id: nextId++, txnId: makeTxnId(nextTxnNum++), ...row };
-      entriesCol().add(newEntry);
+      if (form.type === "Bill") {
+        // Bill → goes to pending queue for admin approval
+        const pendingEntry = { ...row, id: nextId++, txnId: makeTxnId(nextTxnNum++), status:"pending", submittedAt: new Date().toISOString() };
+        pendingCol().add(pendingEntry);
+        setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", currency:"USD", docs:[], txDate: new Date().toISOString().slice(0,10) });
+        setErrors({});
+        setSubmittedPending(true);
+        setTimeout(() => setSubmittedPending(false), 3000);
+        return;
+      } else {
+        // Payment → goes directly to entries
+        const newEntry = { id: nextId++, txnId: makeTxnId(nextTxnNum++), ...row };
+        entriesCol().add(newEntry);
+      }
     }
     setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", currency:"USD", docs:[], txDate: new Date().toISOString().slice(0,10) });
     setErrors({});
@@ -1122,6 +1306,31 @@ function App() {
   const handleDelete = (id) => {
     const entry = entries.find(e => e.id === id);
     if (entry && entry._fireId) entriesCol().doc(entry._fireId).delete();
+  };
+
+  const handleApprove = (pending) => {
+    if (!pending._fireId) return;
+    const { _fireId, status, submittedAt, ...entryData } = pending;
+    const approvedAt = new Date().toISOString();
+    // Move to live entries
+    entriesCol().add({ ...entryData, approvedAt, approvedBy: authUser });
+    // Write to history
+    historyCol().add({ ...pending, status:"approved", approvedAt, approvedBy: authUser });
+    // Remove from pending
+    pendingCol().doc(_fireId).delete();
+  };
+
+  const handleReject = (pending) => {
+    if (!pending._fireId) return;
+    const rejectedAt = new Date().toISOString();
+    // Write to history
+    historyCol().add({ ...pending, status:"rejected", rejectedAt, rejectedBy: authUser });
+    // Remove from pending
+    pendingCol().doc(pending._fireId).delete();
+  };
+
+  const handleClearHistory = () => {
+    requestHistory.forEach(r => { if (r._fireId) historyCol().doc(r._fireId).delete(); });
   };
   const handleNew = () => { setEditId(null); setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", currency:"USD", docs:[], txDate: new Date().toISOString().slice(0,10) }); setErrors({}); setView("form"); };
 
@@ -1378,9 +1587,21 @@ function App() {
           <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:17, letterSpacing:"-.02em", color:"#fff" }}>Paragon</span>
         </div>
         <nav className="paragon-nav" style={{ display:"flex", gap:4 }}>
-          {["dashboard","account","form","sheet"].filter(v => v !== "sheet" || authUser === "ADMIN").map(v => (
+          {["dashboard","account","form","pending","sheet"].filter(v => v !== "sheet" || authUser === "ADMIN").map(v => (
             <button key={v} className={`nav-btn ${view===v?"active":""}`} onClick={()=>setView(v)}>
-              {v==="dashboard"?"🏠 Home":v==="account"?"👤 Account":v==="form"?"✏️ Entry":"⚙️ Admin"}
+              {v==="dashboard"?"🏠 Home":v==="account"?"👤 Account":v==="form"?"✏️ Entry":
+               v==="pending"?(
+                <span style={{display:"flex",alignItems:"center",gap:6}}>
+                  📋 Status
+                  {pendingEntries.length>0&&<span style={{background:"#f59e0b",color:"#0f0f11",borderRadius:"50%",width:16,height:16,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:900,lineHeight:1}}>{pendingEntries.length}</span>}
+                </span>
+               ):(
+                <span style={{display:"flex",alignItems:"center",gap:6}}>
+                  ⚙️ Admin
+                  {pendingEntries.length>0&&<span style={{background:"#f59e0b",color:"#0f0f11",borderRadius:"50%",width:16,height:16,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:900,lineHeight:1}}>{pendingEntries.length}</span>}
+                </span>
+               )
+              }
             </button>
           ))}
         </nav>
@@ -1415,6 +1636,17 @@ function App() {
         {/* ── ACCOUNT DETAIL ── */}
         {view==="account" && (
           <AccountDetail entries={entries} people={people} avatarColor={avatarColor} fmt={fmt} ebColor={ebColor} onPDF={(name)=>generatePDF(name,entries,people)} />
+        )}
+
+        {/* ── PENDING REQUESTS (read-only for all team members) ── */}
+        {view==="pending" && (
+          <RequestHistoryView
+            pendingEntries={pendingEntries}
+            requestHistory={requestHistory}
+            people={people}
+            entryByList={entryByList}
+            handleClearHistory={handleClearHistory}
+          />
         )}
 
         {/* ── FORM ── */}
@@ -1550,9 +1782,15 @@ function App() {
               )}
 
               <div style={{ display:"flex", gap:10 }}>
-                <button className="btn-primary" style={{ flex:1 }} onClick={handleSubmit}>{editId!==null?"Update Entry":"Add Entry"}</button>
+                <button className="btn-primary" style={{ flex:1 }} onClick={handleSubmit}>{editId!==null?"Update Entry": form.type==="Bill" ? "Submit Bill for Approval →" : "Add Payment"}</button>
                 {editId!==null&&<button className="btn-ghost" onClick={()=>{setEditId(null);setForm({name:people[0]||"",type:"Bill",amount:"",source:"",entryBy:entryByList[0]||"",currency:"USD",docs:[],txDate:new Date().toISOString().slice(0,10)});setErrors({});}}>Cancel</button>}
               </div>
+              {form.type==="Bill"&&editId===null&&(
+                <div style={{display:"flex",alignItems:"center",gap:8,background:"#1a1a0a",border:"1px solid #4a3a00",borderRadius:8,padding:"10px 14px",fontSize:12,color:"#f59e0b"}}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  Bill entries require admin approval before being added to the system.
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1573,6 +1811,94 @@ function App() {
                 <button className="btn-primary" style={{ fontSize:12, padding:"8px 18px" }} onClick={handleNew}>+ New Entry</button>
               </div>
             </div>
+
+            {/* ── PENDING APPROVALS PANEL ── */}
+            {pendingEntries.length > 0 && (
+              <div style={{ marginBottom:28 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+                  <div style={{ width:8, height:8, borderRadius:"50%", background:"#f59e0b", boxShadow:"0 0 8px #f59e0b" }}/>
+                  <h2 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:17, color:"#f59e0b", letterSpacing:"-.01em" }}>
+                    Pending Approvals
+                  </h2>
+                  <span style={{ background:"#f59e0b", color:"#0f0f11", borderRadius:20, fontSize:11, fontWeight:900, padding:"2px 9px" }}>{pendingEntries.length}</span>
+                  <span style={{ fontSize:11, color:"#666", marginLeft:4 }}>Bill entries awaiting admin review</span>
+                </div>
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  {pendingEntries.map((p, i) => {
+                    const pIdx = people.indexOf(p.name);
+                    const eIdx = entryByList.indexOf(p.entryBy);
+                    const aColor = AVATAR_COLORS[pIdx>=0?pIdx%AVATAR_COLORS.length:0];
+                    const eColor = EB_COLORS[eIdx>=0?eIdx%EB_COLORS.length:0];
+                    return (
+                      <div key={p._fireId||i} style={{ background:"#16160a", border:"1.5px solid #4a3a00", borderRadius:12, padding:"14px 18px", display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
+                        {/* Status dot */}
+                        <div style={{ width:10, height:10, borderRadius:"50%", background:"#f59e0b", flexShrink:0, boxShadow:"0 0 6px #f59e0b55" }}/>
+                        {/* TXN ID */}
+                        <span style={{ fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:600, color:"#f59e0b", background:"#2a1f00", border:"1px solid #5a4000", padding:"3px 8px", borderRadius:5, flexShrink:0 }}>{p.txnId||"—"}</span>
+                        {/* Date */}
+                        <div style={{ fontSize:11, color:"#888", flexShrink:0 }}>
+                          <div style={{ color:"#555", fontSize:9, textTransform:"uppercase", letterSpacing:".05em", marginBottom:1 }}>Submitted</div>
+                          {p.submittedAt ? new Date(p.submittedAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "—"}
+                        </div>
+                        {/* Person */}
+                        <div style={{ display:"flex", alignItems:"center", gap:7, flexShrink:0 }}>
+                          <div style={{ width:26, height:26, borderRadius:"50%", background:aColor, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:800, color:"#fff" }}>{p.name?.[0]}</div>
+                          <div>
+                            <div style={{ fontSize:12, fontWeight:700, color:aColor }}>{p.name}</div>
+                            <div style={{ fontSize:10, color:"#555" }}>Account</div>
+                          </div>
+                        </div>
+                        {/* Type badge */}
+                        <span style={{ fontSize:11, fontWeight:700, color:"#fb923c", background:"#2d1e0f", border:"1px solid #7c3a10", padding:"3px 9px", borderRadius:5, flexShrink:0 }}>BILL</span>
+                        {/* Amount */}
+                        <div style={{ flexShrink:0 }}>
+                          <div style={{ fontSize:9, color:"#555", textTransform:"uppercase", letterSpacing:".05em", marginBottom:1 }}>Amount</div>
+                          <span style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:15, color:"#fb923c" }}>{fmtC(p.amount, p.currency||"USD")}</span>
+                          {p.currency&&p.currency!=="USD"&&<span style={{ marginLeft:5, fontSize:9, color:"#5b5bf6", background:"#1e1e3a", border:"1px solid #3a3a5e", padding:"1px 4px", borderRadius:3 }}>{p.currency}</span>}
+                        </div>
+                        {/* Source */}
+                        {p.source && <div style={{ fontSize:12, color:"#666", flexShrink:0 }}>
+                          <div style={{ fontSize:9, color:"#444", textTransform:"uppercase", letterSpacing:".05em", marginBottom:1 }}>Details</div>
+                          {p.source}
+                        </div>}
+                        {/* Prepared by */}
+                        <div style={{ flexShrink:0 }}>
+                          <div style={{ fontSize:9, color:"#444", textTransform:"uppercase", letterSpacing:".05em", marginBottom:3 }}>Prepared by</div>
+                          <span style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"3px 8px", borderRadius:20, fontSize:11, fontWeight:500, background:`${eColor}15`, border:`1px solid ${eColor}40`, color:eColor }}>
+                            <span style={{ width:14, height:14, borderRadius:"50%", background:eColor, display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:8, color:"#0f0f11", fontWeight:900 }}>{p.entryBy?.[0]}</span>
+                            {p.entryBy}
+                          </span>
+                        </div>
+                        {/* Docs */}
+                        {p.docs&&p.docs.length>0&&(
+                          <span style={{ fontSize:10, background:"#1a1a2e", border:"1px solid #3a3a5e", color:"#a5b4fc", padding:"3px 8px", borderRadius:5, flexShrink:0 }}>📎 {p.docs.length}</span>
+                        )}
+                        {/* Action buttons — push right */}
+                        <div style={{ marginLeft:"auto", display:"flex", gap:8, flexShrink:0 }}>
+                          <button onClick={()=>handleReject(p)}
+                            style={{ background:"#2d1a1a", border:"1.5px solid #7c2020", color:"#fb923c", fontFamily:"'DM Mono',monospace", fontSize:12, fontWeight:600, padding:"8px 16px", borderRadius:8, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                            Reject
+                          </button>
+                          <button onClick={()=>handleApprove(p)}
+                            style={{ background:"#0a2820", border:"1.5px solid #0f6a4a", color:"#34d399", fontFamily:"'DM Mono',monospace", fontSize:12, fontWeight:600, padding:"8px 18px", borderRadius:8, cursor:"pointer", display:"flex", alignItems:"center", gap:6 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20,6 9,17 4,12"/></svg>
+                            Approve
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ height:1, background:"#2a2a32", margin:"22px 0" }}/>
+              </div>
+            )}
+            {pendingEntries.length === 0 && (
+              <div style={{ display:"flex", alignItems:"center", gap:8, background:"#0a1a14", border:"1px solid #0f3a28", borderRadius:8, padding:"10px 16px", marginBottom:20, fontSize:12, color:"#34d399" }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2"><polyline points="20,6 9,17 4,12"/></svg>
+                No pending approvals — all clear.
+              </div>
+            )}
             {/* Search bar */}
             <div style={{ position:"relative", marginBottom:14 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{ position:"absolute", left:13, top:"50%", transform:"translateY(-50%)" }}>
@@ -1789,6 +2115,7 @@ function App() {
       )}
 
       {submitted&&<div className="toast">✓ Entry saved successfully</div>}
+      {submittedPending&&<div className="toast" style={{background:"#1a1200",border:"1px solid #5a4000",color:"#f59e0b"}}>⏳ Bill submitted — awaiting admin approval</div>}
     </div>
   );
 }
