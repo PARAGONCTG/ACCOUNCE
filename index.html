@@ -32,7 +32,7 @@
   </script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body, #root { min-height: 100vh; }
+    html, body, #root { height: 100vh; overflow: hidden; }
     body { background: #0f0f11; color: #e8e6e1; }
   </style>
 </head>
@@ -503,37 +503,37 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
   return (
     <div>
       {/* Title */}
-      <div className="dash-header" style={{marginBottom:22, display:"flex", justifyContent:"space-between", alignItems:"flex-end"}}>
+      <div className="dash-header" style={{marginBottom:16, display:"flex", justifyContent:"space-between", alignItems:"flex-end"}}>
         <div>
-          <h1 style={{fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:28, letterSpacing:"-.03em", marginBottom:4}}>Account Overview</h1>
-          <p style={{color:"#555", fontSize:13}}>{people.length} accounts · {entries.length} transactions</p>
+          <h1 style={{fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:24, letterSpacing:"-.03em", marginBottom:2}}>Account Overview</h1>
+          <p style={{color:"#555", fontSize:12}}>{people.length} accounts · {entries.length} transactions</p>
         </div>
-        <button onClick={onAddPerson} style={{display:"flex",alignItems:"center",gap:7,background:"#1e1e2e",border:"1px solid #3a3a5e",color:"#a5b4fc",padding:"9px 16px",borderRadius:8,cursor:"pointer",fontFamily:"'DM Mono',monospace",fontSize:12}}>
+        <button onClick={onAddPerson} style={{display:"flex",alignItems:"center",gap:7,background:"#1e1e2e",border:"1px solid #3a3a5e",color:"#a5b4fc",padding:"7px 14px",borderRadius:8,cursor:"pointer",fontFamily:"'DM Mono',monospace",fontSize:12}}>
           + Add Account
         </button>
       </div>
 
       {/* Global summary cards — single row, all currencies */}
-      <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:14, marginBottom:24}}>
+      <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:10, marginBottom:16}}>
         {[
           {label:"Total Bills",    icon:"📤", cls:"balance-neg", key:"bills"},
           {label:"Total Payments", icon:"📥", cls:"balance-pos", key:"payments"},
           {label:"Overall Balance",icon:"⚖️", key:"balance"},
         ].map(s=>(
-          <div key={s.label} className="stat-card">
-            <div style={{fontSize:18,marginBottom:6}}>{s.icon}</div>
-            <div style={{color:"#555",fontSize:11,marginBottom:8,letterSpacing:".06em",textTransform:"uppercase"}}>{s.label}</div>
+          <div key={s.label} className="stat-card" style={{padding:"14px 18px"}}>
+            <div style={{fontSize:16,marginBottom:4}}>{s.icon}</div>
+            <div style={{color:"#555",fontSize:10,marginBottom:6,letterSpacing:".06em",textTransform:"uppercase"}}>{s.label}</div>
             {currencyTotals.length === 0 ? (
-              <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:22,color:"#333"}}>—</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:20,color:"#333"}}>—</div>
             ) : (
-              <div style={{display:"flex",flexDirection:"column",gap:4}}>
+              <div style={{display:"flex",flexDirection:"column",gap:3}}>
                 {currencyTotals.map(ct => {
                   const val = ct[s.key];
                   const cls = s.key==="balance" ? (val>=0?"balance-pos":"balance-neg") : s.cls;
                   return (
                     <div key={ct.code} style={{display:"flex",alignItems:"center",gap:6}}>
                       <span style={{fontSize:9,color:"#5b5bf6",background:"#1e1e3a",border:"1px solid #3a3a5e",padding:"2px 6px",borderRadius:3,fontWeight:600,minWidth:32,textAlign:"center"}}>{ct.code}</span>
-                      <span className={cls} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:16,whiteSpace:"nowrap"}}>{fmtC(val,ct.code)}</span>
+                      <span className={cls} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14,whiteSpace:"nowrap"}}>{fmtC(val,ct.code)}</span>
                     </div>
                   );
                 })}
@@ -544,29 +544,25 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
       </div>
 
       {/* Accounts table */}
-      <div className="card accounts-table-wrap" style={{padding:0, overflow:"hidden", marginBottom:24}}>
+      <div className="card accounts-table-wrap" style={{padding:0, overflow:"hidden", marginBottom:16}}>
         {/* Table toolbar */}
-        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px 18px", borderBottom:"1px solid #2a2a32", gap:12, flexWrap:"wrap"}}>
-          <span style={{fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:15}}>All Accounts</span>
+        <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 16px", borderBottom:"1px solid #2a2a32", gap:12, flexWrap:"wrap"}}>
+          <span style={{fontFamily:"'Syne',sans-serif", fontWeight:700, fontSize:13}}>All Accounts</span>
           <div style={{display:"flex", alignItems:"center", gap:8, flex:1, justifyContent:"flex-end", flexWrap:"wrap"}}>
-            {/* Search */}
             <div style={{position:"relative", maxWidth:240, flex:1, minWidth:140}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)"}}>
                 <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
               <input value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} placeholder="Search accounts…"
-                style={{width:"100%",background:"#1e1e26",border:"1px solid #2e2e3a",borderRadius:7,padding:"8px 12px 8px 32px",color:"#e8e6e1",fontSize:12,fontFamily:"'DM Mono',monospace",outline:"none"}}/>
+                style={{width:"100%",background:"#1e1e26",border:"1px solid #2e2e3a",borderRadius:7,padding:"7px 12px 7px 32px",color:"#e8e6e1",fontSize:12,fontFamily:"'DM Mono',monospace",outline:"none"}}/>
             </div>
-            {/* Clear search */}
             {search && (
-              <button
-                onClick={()=>{setSearch("");setPage(0);}}
-                style={{background:"#2d1a1a",border:"1px solid #5c2020",color:"#fb923c",fontFamily:"'DM Mono',monospace",fontSize:11,padding:"6px 12px",borderRadius:6,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}
-              >
+              <button onClick={()=>{setSearch("");setPage(0);}}
+                style={{background:"#2d1a1a",border:"1px solid #5c2020",color:"#fb923c",fontFamily:"'DM Mono',monospace",fontSize:11,padding:"5px 10px",borderRadius:6,cursor:"pointer",display:"flex",alignItems:"center",gap:5,whiteSpace:"nowrap"}}>
                 ✕ Clear
               </button>
             )}
-            <span style={{fontSize:12,color:"#555",whiteSpace:"nowrap"}}>{filtered.length} of {people.length}</span>
+            <span style={{fontSize:11,color:"#555",whiteSpace:"nowrap"}}>{filtered.length} of {people.length}</span>
           </div>
         </div>
 
@@ -574,7 +570,7 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
         <div style={{overflowX:"auto", WebkitOverflowScrolling:"touch"}}>
         <div style={{minWidth:600}}>
         {/* Column headers */}
-        <div style={{display:"grid", gridTemplateColumns:"1fr 200px 200px 260px 90px", padding:"10px 18px", background:"#12121a", borderBottom:"1px solid #2a2a32"}}>
+        <div style={{display:"grid", gridTemplateColumns:"1fr 200px 200px 260px 90px", padding:"8px 16px", background:"#12121a", borderBottom:"1px solid #2a2a32"}}>
           {[
             {key:"name",     label:"ACCOUNT"},
             {key:"bills",    label:"BILLS"},
@@ -591,19 +587,19 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
 
         {/* Rows */}
         {paged.length === 0 && (
-          <div style={{textAlign:"center",padding:"40px",color:"#555",fontSize:13}}>No accounts match your search.</div>
+          <div style={{textAlign:"center",padding:"30px",color:"#555",fontSize:13}}>No accounts match your search.</div>
         )}
         {paged.map((p,i)=>{
           const color = AVATAR_COLORS[people.indexOf(p.name) % AVATAR_COLORS.length];
           const txCount = entries.filter(e=>e.name===p.name).length;
           return (
-            <div key={p.name} className="sheet-row" style={{display:"grid", gridTemplateColumns:"1fr 200px 200px 260px 90px", padding:"12px 18px", borderBottom:i<paged.length-1?"1px solid #1e1e26":"none", alignItems:"center"}}>
+            <div key={p.name} className="sheet-row" style={{display:"grid", gridTemplateColumns:"1fr 200px 200px 260px 90px", padding:"9px 16px", borderBottom:i<paged.length-1?"1px solid #1e1e26":"none", alignItems:"center"}}>
               {/* Account */}
-              <div style={{display:"flex", alignItems:"center", gap:11}}>
-                <div style={{width:34,height:34,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:13,color:"#fff",flexShrink:0}}>{p.name[0]}</div>
+              <div style={{display:"flex", alignItems:"center", gap:9}}>
+                <div style={{width:30,height:30,borderRadius:"50%",background:color,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:12,color:"#fff",flexShrink:0}}>{p.name[0]}</div>
                 <div>
-                  <div style={{fontSize:13,fontWeight:600,color:color,fontFamily:"'Syne',sans-serif"}}>{p.name}</div>
-                  <div style={{fontSize:11,color:"#444",marginTop:1}}>{txCount} transaction{txCount!==1?"s":""}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:color,fontFamily:"'Syne',sans-serif"}}>{p.name}</div>
+                  <div style={{fontSize:10,color:"#444",marginTop:1}}>{txCount} transaction{txCount!==1?"s":""}</div>
                 </div>
               </div>
               {/* Bills */}
@@ -612,10 +608,10 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
                   Object.entries(p.currencies).map(([code, v]) => (
                     <div key={code} style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4,marginBottom:2}}>
                       <span style={{fontSize:9,color:"#555",whiteSpace:"nowrap"}}>{code}</span>
-                      <span style={{fontSize:12,fontWeight:700,color:"#fb923c",whiteSpace:"nowrap"}}>{fmtC(v.bills,code)}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:"#fb923c",whiteSpace:"nowrap"}}>{fmtC(v.bills,code)}</span>
                     </div>
                   ))
-                ) : <div style={{fontSize:13,fontWeight:700,color:"#fb923c"}}>$0.00</div>}
+                ) : <div style={{fontSize:12,fontWeight:700,color:"#fb923c"}}>$0.00</div>}
               </div>
               {/* Payments */}
               <div style={{textAlign:"right"}}>
@@ -623,10 +619,10 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
                   Object.entries(p.currencies).map(([code, v]) => (
                     <div key={code} style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4,marginBottom:2}}>
                       <span style={{fontSize:9,color:"#555",whiteSpace:"nowrap"}}>{code}</span>
-                      <span style={{fontSize:12,fontWeight:700,color:"#34d399",whiteSpace:"nowrap"}}>{fmtC(v.payments,code)}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:"#34d399",whiteSpace:"nowrap"}}>{fmtC(v.payments,code)}</span>
                     </div>
                   ))
-                ) : <div style={{fontSize:13,fontWeight:700,color:"#34d399"}}>$0.00</div>}
+                ) : <div style={{fontSize:12,fontWeight:700,color:"#34d399"}}>$0.00</div>}
               </div>
               {/* Balance */}
               <div style={{textAlign:"right"}}>
@@ -634,10 +630,10 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
                   Object.entries(p.currencies).map(([code, v]) => {
                     const bal = v.payments - v.bills;
                     return (
-                      <div key={code} style={{marginBottom:3}}>
+                      <div key={code} style={{marginBottom:2}}>
                         <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:4}}>
                           <span style={{fontSize:9,color:"#5b5bf6",background:"#1e1e3a",border:"1px solid #3a3a5e",padding:"1px 5px",borderRadius:3,whiteSpace:"nowrap"}}>{code}</span>
-                          <span className={bal>=0?"balance-pos":"balance-neg"} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:13,whiteSpace:"nowrap"}}>{fmtC(bal,code)}</span>
+                          <span className={bal>=0?"balance-pos":"balance-neg"} style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:12,whiteSpace:"nowrap"}}>{fmtC(bal,code)}</span>
                         </div>
                         <div style={{fontSize:10,color:"#555",textAlign:"right"}}>{bal>=0?"in credit":"outstanding"}</div>
                       </div>
@@ -645,7 +641,7 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
                   })
                 ) : (
                   <div>
-                    <div className="balance-pos" style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14}}>$0.00</div>
+                    <div className="balance-pos" style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:13}}>$0.00</div>
                     <div style={{fontSize:10,color:"#555"}}>in credit</div>
                   </div>
                 )}
@@ -662,7 +658,7 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
 
         {/* Totals footer */}
         {filtered.length > 0 && (
-          <div style={{display:"grid", gridTemplateColumns:"1fr 200px 200px 260px 90px", padding:"12px 18px", borderTop:"1px solid #2a2a32", background:"#12121a"}}>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 200px 200px 260px 90px", padding:"9px 16px", borderTop:"1px solid #2a2a32", background:"#12121a"}}>
             <span style={{fontSize:11,color:"#555",fontWeight:600}}>TOTAL ({filtered.length} accounts)</span>
             <div style={{textAlign:"right"}}>
               {Object.entries(filtered.reduce((acc,p)=>{
@@ -705,17 +701,17 @@ function DashboardView({ entries, people, perPersonStats, avatarColor, fmt, ebCo
         </div>{/* end scroll wrapper */}
         {/* Pagination */}
         {totalPages > 1 && (
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"12px 18px",borderTop:"1px solid #1e1e26"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"9px 16px",borderTop:"1px solid #1e1e26"}}>
             <button onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={page===0}
-              style={{background:"none",border:"1px solid #2e2e3a",color:page===0?"#333":"#888",padding:"5px 12px",borderRadius:6,cursor:page===0?"default":"pointer",fontFamily:"inherit",fontSize:12}}>← Prev</button>
+              style={{background:"none",border:"1px solid #2e2e3a",color:page===0?"#333":"#888",padding:"4px 11px",borderRadius:6,cursor:page===0?"default":"pointer",fontFamily:"inherit",fontSize:12}}>← Prev</button>
             {Array.from({length:totalPages},(_,i)=>(
               <button key={i} onClick={()=>setPage(i)}
-                style={{background:page===i?"#5b5bf6":"none",border:`1px solid ${page===i?"#5b5bf6":"#2e2e3a"}`,color:page===i?"#fff":"#888",width:32,height:32,borderRadius:6,cursor:"pointer",fontFamily:"inherit",fontSize:12}}>
+                style={{background:page===i?"#5b5bf6":"none",border:`1px solid ${page===i?"#5b5bf6":"#2e2e3a"}`,color:page===i?"#fff":"#888",width:28,height:28,borderRadius:6,cursor:"pointer",fontFamily:"inherit",fontSize:12}}>
                 {i+1}
               </button>
             ))}
             <button onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))} disabled={page===totalPages-1}
-              style={{background:"none",border:"1px solid #2e2e3a",color:page===totalPages-1?"#333":"#888",padding:"5px 12px",borderRadius:6,cursor:page===totalPages-1?"default":"pointer",fontFamily:"inherit",fontSize:12}}>Next →</button>
+              style={{background:"none",border:"1px solid #2e2e3a",color:page===totalPages-1?"#333":"#888",padding:"4px 11px",borderRadius:6,cursor:page===totalPages-1?"default":"pointer",fontFamily:"inherit",fontSize:12}}>Next →</button>
           </div>
         )}
       </div>
@@ -1016,7 +1012,7 @@ function AccountDetail({ entries, people, avatarColor, fmt, ebColor, onPDF }) {
 
 
 // ── REQUEST HISTORY VIEW ──────────────────────────────────────────────────────
-function RequestHistoryView({ pendingEntries, requestHistory, people, entryByList, handleClearHistory }) {
+function RequestHistoryView({ pendingEntries, requestHistory, people, entryByList, handleClearHistory, handleClearOne }) {
   const [statusFilter, setStatusFilter] = useState("pending");
 
   const allRequests = [
@@ -1097,8 +1093,8 @@ function RequestHistoryView({ pendingEntries, requestHistory, people, entryByLis
           <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
           <div style={{minWidth:920}}>
           {/* Table header */}
-          <div style={{display:"grid",gridTemplateColumns:"130px 120px 120px 130px 100px 130px 160px 150px",padding:"11px 18px",background:"#12121a",borderBottom:"1px solid #2a2a32"}}>
-            {["SUB. ID","STATUS","DATE","ACCOUNT","TYPE","AMOUNT","DETAILS","PREPARED BY"].map((h,i)=>(
+          <div style={{display:"grid",gridTemplateColumns:"130px 120px 120px 130px 100px 130px 160px 150px 80px",padding:"11px 18px",background:"#12121a",borderBottom:"1px solid #2a2a32"}}>
+            {["SUB. ID","STATUS","DATE","ACCOUNT","TYPE","AMOUNT","DETAILS","PREPARED BY","ACTION"].map((h,i)=>(
               <span key={i} style={{fontSize:10,color:i===0?"#a5b4fc":i===1?"#f59e0b":"#555",letterSpacing:".08em",fontWeight:600,textTransform:"uppercase"}}>{h}</span>
             ))}
           </div>
@@ -1116,7 +1112,7 @@ function RequestHistoryView({ pendingEntries, requestHistory, people, entryByLis
               : null;
             return (
               <div key={r._fireId||i}>
-                <div className="sheet-row" style={{display:"grid",gridTemplateColumns:"130px 120px 120px 130px 100px 130px 160px 150px",padding:"12px 18px",borderBottom:"1px solid #1e1e26",alignItems:"center",background:rowBg}}>
+                <div className="sheet-row" style={{display:"grid",gridTemplateColumns:"130px 120px 120px 130px 100px 130px 160px 150px 80px",padding:"12px 18px",borderBottom:"1px solid #1e1e26",alignItems:"center",background:rowBg}}>
                   <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:700,color:"#a5b4fc",background:"#1a1a2e",border:"1px solid #3a3a5e",padding:"3px 7px",borderRadius:5,display:"inline-block"}}>{r.txnId||"—"}</span>
                   <div><StatusBadge status={r.status}/></div>
                   <div style={{fontSize:11,color:"#888"}}>{r.submittedAt?new Date(r.submittedAt).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}):"—"}</div>
@@ -1136,6 +1132,19 @@ function RequestHistoryView({ pendingEntries, requestHistory, people, entryByLis
                       {r.entryBy}
                     </span>
                   ):<span style={{color:"#333",fontSize:11}}>—</span>}
+                  {/* Per-row clear button — only for approved/rejected history entries */}
+                  <div>
+                    {r.status !== "pending" ? (
+                      <button onClick={()=>handleClearOne(r)}
+                        title="Remove this entry from history"
+                        style={{display:"inline-flex",alignItems:"center",gap:5,background:"#2a0f0f",border:"1px solid #5c1a1a",color:"#fb923c",fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:6,cursor:"pointer",whiteSpace:"nowrap"}}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3,6 5,6 21,6"/><path d="M19,6l-1,14a2,2,0,0,1-2,2H8a2,2,0,0,1-2-2L5,6"/><path d="M10,11v6M14,11v6"/></svg>
+                        Clear
+                      </button>
+                    ) : (
+                      <span style={{fontSize:10,color:"#333"}}>—</span>
+                    )}
+                  </div>
                 </div>
                 {actionLabel&&(
                   <div style={{padding:"4px 18px 7px",background:rowBg,borderBottom:"1px solid #1e1e26",display:"flex",alignItems:"center",gap:6}}>
@@ -1332,6 +1341,10 @@ function App() {
   const handleClearHistory = () => {
     requestHistory.forEach(r => { if (r._fireId) historyCol().doc(r._fireId).delete(); });
   };
+
+  const handleClearOne = (record) => {
+    if (record._fireId) historyCol().doc(record._fireId).delete();
+  };
   const handleNew = () => { setEditId(null); setForm({ name:people[0]||"", type:"Bill", amount:"", source:"", entryBy:entryByList[0]||"", currency:"USD", docs:[], txDate: new Date().toISOString().slice(0,10) }); setErrors({}); setView("form"); };
 
   const handleAddPerson = () => {
@@ -1455,7 +1468,7 @@ function App() {
   );
 
   return (
-    <div style={{ fontFamily:"'DM Mono',monospace", minHeight:"100vh", background:"#0f0f11", color:"#e8e6e1" }}>
+    <div style={{ fontFamily:"'DM Mono',monospace", height:"100vh", display:"flex", flexDirection:"column", background:"#0f0f11", color:"#e8e6e1", overflow:"hidden" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0}
@@ -1464,11 +1477,11 @@ function App() {
         .nav-btn{background:none;border:none;cursor:pointer;padding:8px 18px;border-radius:6px;font-family:'DM Mono',monospace;font-size:13px;color:#888;transition:all .2s}
         .nav-btn.active{background:#1e1e24;color:#e8e6e1}
         .nav-btn:hover:not(.active){color:#c8c6c1}
-        .card{background:#16161b;border:1px solid #2a2a32;border-radius:12px;padding:24px}
+        .card{background:#16161b;border:1px solid #2a2a32;border-radius:12px;padding:18px}
         .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:500;letter-spacing:.04em}
         .tag-bill{background:#2d1e0f;color:#fb923c;border:1px solid #7c3a10}
         .tag-payment{background:#0a2420;color:#34d399;border:1px solid #0f4a3a}
-        .input-field{width:100%;background:#1e1e26;border:1px solid #2e2e3a;border-radius:8px;padding:12px 14px;font-family:'DM Mono',monospace;font-size:14px;color:#e8e6e1;transition:border .2s}
+        .input-field{width:100%;background:#1e1e26;border:1px solid #2e2e3a;border-radius:8px;padding:9px 12px;font-family:'DM Mono',monospace;font-size:13px;color:#e8e6e1;transition:border .2s}
         .input-field:focus{border-color:#5b5bf6}
         .input-field.error{border-color:#fb923c}
         .btn-primary{background:#5b5bf6;border:none;color:#fff;font-family:'DM Mono',monospace;font-size:13px;font-weight:500;padding:12px 28px;border-radius:8px;cursor:pointer;transition:background .2s,transform .1s}
@@ -1619,7 +1632,7 @@ function App() {
         </div>
       </div>
 
-      <div className="paragon-main" style={{ maxWidth:1400, margin:"0 auto", padding:"28px 32px" }}>
+      <div className="paragon-main" style={{ maxWidth:1400, width:"100%", margin:"0 auto", padding:"18px 32px", flex:1, overflowY:"auto" }}>
 
         {/* ── DASHBOARD ── */}
         {view==="dashboard" && (
@@ -1646,20 +1659,21 @@ function App() {
             people={people}
             entryByList={entryByList}
             handleClearHistory={handleClearHistory}
+            handleClearOne={handleClearOne}
           />
         )}
 
         {/* ── FORM ── */}
         {view==="form" && (
-          <div className="form-wrap" style={{ maxWidth:580, margin:"0 auto" }}>
-            <div style={{ marginBottom:26 }}>
-              <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:4}}>
-                <h1 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:26, letterSpacing:"-.03em" }}>{editId!==null?"Edit Entry":"Paragon"}</h1>
-                {editId!==null && (() => { const e = entries.find(x=>x.id===editId); return e?.txnId ? <span style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:600,color:"#a5b4fc",background:"#1a1a2e",border:"1px solid #3a3a5e",padding:"4px 10px",borderRadius:6}}>{e.txnId}</span> : null; })()}
+          <div className="form-wrap" style={{ maxWidth:540, margin:"0 auto" }}>
+            <div style={{ marginBottom:14 }}>
+              <div style={{display:"flex", alignItems:"center", gap:10, marginBottom:2}}>
+                <h1 style={{ fontFamily:"'Syne',sans-serif", fontWeight:800, fontSize:22, letterSpacing:"-.03em" }}>{editId!==null?"Edit Entry":"Paragon"}</h1>
+                {editId!==null && (() => { const e = entries.find(x=>x.id===editId); return e?.txnId ? <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:600,color:"#a5b4fc",background:"#1a1a2e",border:"1px solid #3a3a5e",padding:"3px 8px",borderRadius:6}}>{e.txnId}</span> : null; })()}
               </div>
-              <p style={{ color:"#555", fontSize:13 }}>Account of Paragon — fill in all details</p>
+              <p style={{ color:"#555", fontSize:12 }}>Account of Paragon — fill in all details</p>
             </div>
-            <div className="card" style={{ display:"flex", flexDirection:"column", gap:20 }}>
+            <div className="card" style={{ display:"flex", flexDirection:"column", gap:12, padding:"16px" }}>
 
               {/* 1. Prepared By */}
               <div>
@@ -1671,7 +1685,7 @@ function App() {
                   onChange={v=>{setForm(f=>({...f,entryBy:v}));setErrors(er=>({...er,entryBy:""}));}}
                   onAddNew={name=>setEntryByList(prev=>[...prev,name])}
                 />
-                {errors.entryBy&&<p style={{ color:"#fb923c", fontSize:12, marginTop:6 }}>{errors.entryBy}</p>}
+                {errors.entryBy&&<p style={{ color:"#fb923c", fontSize:11, marginTop:4 }}>{errors.entryBy}</p>}
               </div>
 
               {/* 2. Account Name */}
@@ -1686,21 +1700,21 @@ function App() {
                   onChange={v=>{setForm(f=>({...f,name:v}));setErrors(er=>({...er,name:""}));}}
                   onAddNew={name=>setPeople(prev=>[...prev,name])}
                 />
-                {errors.name&&<p style={{ color:"#fb923c", fontSize:12, marginTop:6 }}>{errors.name}</p>}
+                {errors.name&&<p style={{ color:"#fb923c", fontSize:11, marginTop:4 }}>{errors.name}</p>}
               </div>
 
               {/* 3. Details */}
               <div>
-                <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:8, letterSpacing:".06em", textTransform:"uppercase" }}>
+                <label style={{ display:"block", fontSize:11, color:"#888", marginBottom:6, letterSpacing:".06em", textTransform:"uppercase" }}>
                   Details <span style={{ fontSize:10, color:"#444", fontWeight:400, letterSpacing:0, textTransform:"none" }}>optional</span>
                 </label>
-                <input className="input-field" placeholder="e.g. Bank, Cash, Office, Client…" value={form.source}
+                <input className="input-field" style={{padding:"9px 12px",fontSize:13}} placeholder="e.g. Bank, Cash, Office, Client…" value={form.source}
                   onChange={e=>setForm(f=>({...f,source:e.target.value}))}/>
               </div>
 
               {/* 4. Bill / Payment Date */}
               <div>
-                <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:8, letterSpacing:".06em", textTransform:"uppercase" }}>
+                <label style={{ display:"block", fontSize:11, color:"#888", marginBottom:6, letterSpacing:".06em", textTransform:"uppercase" }}>
                   Bill / Payment Date
                 </label>
                 <input
@@ -1709,19 +1723,19 @@ function App() {
                   value={form.txDate || new Date().toISOString().slice(0,10)}
                   max={new Date().toISOString().slice(0,10)}
                   onChange={e=>setForm(f=>({...f,txDate:e.target.value}))}
-                  style={{ colorScheme:"dark", cursor:"pointer", fontFamily:"'DM Mono',monospace" }}
+                  style={{ colorScheme:"dark", cursor:"pointer", fontFamily:"'DM Mono',monospace", padding:"9px 12px", fontSize:13 }}
                 />
-                <p style={{ color:"#555", fontSize:11, marginTop:5 }}>Date of the bill or payment · defaults to today</p>
+                <p style={{ color:"#555", fontSize:10, marginTop:4 }}>Date of the bill or payment · defaults to today</p>
               </div>
 
               {/* 5. Type */}
               <div>
-                <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:10, letterSpacing:".06em", textTransform:"uppercase" }}>Type</label>
-                <div style={{ display:"flex", gap:10 }}>
+                <label style={{ display:"block", fontSize:11, color:"#888", marginBottom:7, letterSpacing:".06em", textTransform:"uppercase" }}>Type</label>
+                <div style={{ display:"flex", gap:8 }}>
                   {TYPES.map(t => (
                     <button key={t} onClick={()=>setForm(f=>({...f,type:t}))}
                       className="type-btn"
-                      style={{ flex:1, padding:"12px", borderRadius:8, border:"1px solid", cursor:"pointer", fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:500, transition:"all .2s",
+                      style={{ flex:1, padding:"9px", borderRadius:8, border:"1px solid", cursor:"pointer", fontFamily:"'DM Mono',monospace", fontSize:12, fontWeight:500, transition:"all .2s",
                         background:form.type===t?(t==="Bill"?"#2d1a1a":"#1a2d1a"):"#1e1e26",
                         borderColor:form.type===t?(t==="Bill"?"#fb923c":"#34d399"):"#2e2e3a",
                         color:form.type===t?(t==="Bill"?"#fb923c":"#34d399"):"#888" }}>
@@ -1731,37 +1745,38 @@ function App() {
                 </div>
               </div>
 
-              {/* 5. Amount */}
-              <div>
-                <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:8, letterSpacing:".06em", textTransform:"uppercase" }}>Amount ($)</label>
-                <input className={`input-field ${errors.amount?"error":""}`} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount}
-                  onChange={e=>{setForm(f=>({...f,amount:e.target.value}));setErrors(er=>({...er,amount:""}));}}/>
-                {errors.amount&&<p style={{ color:"#fb923c", fontSize:12, marginTop:6 }}>{errors.amount}</p>}
-              </div>
-
-              {/* 5b. Currency */}
-              <div>
-                <label style={{ display:"block", fontSize:12, color:"#888", marginBottom:8, letterSpacing:".06em", textTransform:"uppercase" }}>Currency</label>
-                <div style={{ display:"flex", gap:8 }}>
-                  {CURRENCIES.map(c => (
-                    <button key={c.code} onClick={()=>setForm(f=>({...f,currency:c.code}))}
-                      className="currency-btn"
-                      style={{ flex:1, padding:"10px 6px", borderRadius:8, border:"1px solid", cursor:"pointer",
-                        fontFamily:"'DM Mono',monospace", fontSize:12, fontWeight:500, transition:"all .2s",
-                        background: form.currency===c.code ? "#1e1e3a" : "#1e1e26",
-                        borderColor: form.currency===c.code ? "#5b5bf6" : "#2e2e3a",
-                        color: form.currency===c.code ? "#a5b4fc" : "#666" }}>
-                      <div style={{fontSize:16, marginBottom:2}}>{c.symbol}</div>
-                      <div style={{fontSize:10}}>{c.code}</div>
-                    </button>
-                  ))}
+              {/* Amount + Currency — single row */}
+              <div style={{ display:"flex", gap:10, alignItems:"flex-start" }}>
+                <div style={{ flex:1 }}>
+                  <label style={{ display:"block", fontSize:11, color:"#888", marginBottom:6, letterSpacing:".06em", textTransform:"uppercase" }}>Amount</label>
+                  <input className={`input-field ${errors.amount?"error":""}`} type="number" min="0" step="0.01" placeholder="0.00" value={form.amount}
+                    style={{padding:"9px 12px",fontSize:13}}
+                    onChange={e=>{setForm(f=>({...f,amount:e.target.value}));setErrors(er=>({...er,amount:""}));}}/>
+                  {errors.amount&&<p style={{ color:"#fb923c", fontSize:11, marginTop:4 }}>{errors.amount}</p>}
+                </div>
+                <div style={{ flexShrink:0 }}>
+                  <label style={{ display:"block", fontSize:11, color:"#888", marginBottom:6, letterSpacing:".06em", textTransform:"uppercase" }}>Currency</label>
+                  <div style={{ display:"flex", gap:6 }}>
+                    {CURRENCIES.map(c => (
+                      <button key={c.code} onClick={()=>setForm(f=>({...f,currency:c.code}))}
+                        className="currency-btn"
+                        style={{ padding:"6px 10px", borderRadius:7, border:"1px solid", cursor:"pointer",
+                          fontFamily:"'DM Mono',monospace", fontSize:11, fontWeight:500, transition:"all .2s",
+                          background: form.currency===c.code ? "#1e1e3a" : "#1e1e26",
+                          borderColor: form.currency===c.code ? "#5b5bf6" : "#2e2e3a",
+                          color: form.currency===c.code ? "#a5b4fc" : "#666" }}>
+                        <div style={{fontSize:14, marginBottom:1}}>{c.symbol}</div>
+                        <div style={{fontSize:9}}>{c.code}</div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
               {/* 6. Documents */}
               <div>
-                <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#888", marginBottom:10, letterSpacing:".06em", textTransform:"uppercase" }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+                <label style={{ display:"flex", alignItems:"center", gap:6, fontSize:11, color:"#888", marginBottom:7, letterSpacing:".06em", textTransform:"uppercase" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#a5b4fc" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
                   Documents <span style={{ fontSize:10, color:"#444", fontWeight:400, letterSpacing:0, textTransform:"none" }}>optional</span>
                 </label>
                 <DocUploader docs={form.docs} onChange={upd=>setForm(f=>({...f,docs:typeof upd==="function"?upd(f.docs):upd}))}/>
@@ -1769,25 +1784,24 @@ function App() {
 
               {/* Summary preview */}
               {form.amount && !isNaN(form.amount) && Number(form.amount) > 0 && (
-                <div style={{ background:"#1a1a22", border:"1px solid #2a2a32", borderRadius:8, padding:"11px 14px", fontSize:13, color:"#888" }}>
+                <div style={{ background:"#1a1a22", border:"1px solid #2a2a32", borderRadius:8, padding:"8px 12px", fontSize:12, color:"#888" }}>
                   <strong style={{ color:avatarColor(form.name) }}>{form.name}</strong>
                   {form.source && <span> · <span style={{ color:"#666" }}>{form.source}</span></span>}
                   {" "} — {form.type==="Bill"?"📤 decreases":"📥 increases"} balance by{" "}
                   <strong style={{ color:"#e8e6e1" }}>{fmtC(Number(form.amount), form.currency)}</strong>
-                  <span style={{ marginLeft:6, fontSize:11, color:"#5b5bf6", background:"#1e1e3a", border:"1px solid #3a3a5e", padding:"2px 6px", borderRadius:4 }}>{form.currency}</span>
-                  {form.entryBy && <span style={{ marginLeft:8, fontSize:11, color:ebColor(form.entryBy) }}>· prep. by {form.entryBy}</span>}
-                  {form.docs.length>0&&<span style={{ color:"#a5b4fc", marginLeft:8 }}>· 📎{form.docs.length}</span>}
-                  <span style={{ marginLeft:8, fontSize:11, color:"#f59e0b" }}>· 🕐 {new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</span>
+                  <span style={{ marginLeft:5, fontSize:10, color:"#5b5bf6", background:"#1e1e3a", border:"1px solid #3a3a5e", padding:"1px 5px", borderRadius:4 }}>{form.currency}</span>
+                  {form.entryBy && <span style={{ marginLeft:6, fontSize:10, color:ebColor(form.entryBy) }}>· prep. by {form.entryBy}</span>}
+                  {form.docs.length>0&&<span style={{ color:"#a5b4fc", marginLeft:6 }}>· 📎{form.docs.length}</span>}
                 </div>
               )}
 
-              <div style={{ display:"flex", gap:10 }}>
-                <button className="btn-primary" style={{ flex:1 }} onClick={handleSubmit}>{editId!==null?"Update Entry": form.type==="Bill" ? "Submit Bill for Approval →" : "Add Payment"}</button>
-                {editId!==null&&<button className="btn-ghost" onClick={()=>{setEditId(null);setForm({name:people[0]||"",type:"Bill",amount:"",source:"",entryBy:entryByList[0]||"",currency:"USD",docs:[],txDate:new Date().toISOString().slice(0,10)});setErrors({});}}>Cancel</button>}
+              <div style={{ display:"flex", gap:8 }}>
+                <button className="btn-primary" style={{ flex:1, padding:"10px" }} onClick={handleSubmit}>{editId!==null?"Update Entry": form.type==="Bill" ? "Submit Bill for Approval →" : "Add Payment"}</button>
+                {editId!==null&&<button className="btn-ghost" style={{padding:"10px 14px"}} onClick={()=>{setEditId(null);setForm({name:people[0]||"",type:"Bill",amount:"",source:"",entryBy:entryByList[0]||"",currency:"USD",docs:[],txDate:new Date().toISOString().slice(0,10)});setErrors({});}}>Cancel</button>}
               </div>
               {form.type==="Bill"&&editId===null&&(
-                <div style={{display:"flex",alignItems:"center",gap:8,background:"#1a1a0a",border:"1px solid #4a3a00",borderRadius:8,padding:"10px 14px",fontSize:12,color:"#f59e0b"}}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <div style={{display:"flex",alignItems:"center",gap:7,background:"#1a1a0a",border:"1px solid #4a3a00",borderRadius:7,padding:"8px 12px",fontSize:11,color:"#f59e0b"}}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                   Bill entries require admin approval before being added to the system.
                 </div>
               )}
